@@ -410,7 +410,8 @@ h2 b { color: var(--sand); font-weight: 600; }
      file. So the conflict card stays hand-written Arabic; only the stats and
      driver roster — genuinely just data — come from the live API.
   ============================================================================ */
-  const BACKEND = "http://localhost:4000"; // ← same backend as web/driver/index.html
+  // Empty string = same origin as this page (see web/driver/index.html for why).
+  const BACKEND = "";
 
   // Arabic-Indic digits AND the Arabic thousands separator (٬, U+066C) — the
   // static markup on this page already uses "٣٧٬٠٠٠", not "٣٧,٠٠٠", so live
@@ -419,7 +420,6 @@ h2 b { color: var(--sand); font-weight: 600; }
   const money = (n) => ar(Number(n).toLocaleString("en-US")) + " د.ع";
 
   async function connectLive() {
-    if (!BACKEND) return;
     try {
       const sessionRes = await fetch(`${BACKEND}/demo/session`, { method: "POST" });
       if (!sessionRes.ok) throw new Error(`session ${sessionRes.status}`);

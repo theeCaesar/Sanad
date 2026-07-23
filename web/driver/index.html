@@ -639,9 +639,13 @@
       to /sync/push. The conflict you watch resolve is the actual production
       engine, not a script.
 
-   To go live: set BACKEND to 'http://localhost:4000' and reload.
+   Empty string means "same origin as this page" — when Caddy serves this
+   file from the deployed domain, /demo/session and /api/v1/sync/push
+   resolve against that domain and hit the real backend behind it. Opened
+   as a bare file:// with no server, those fetches fail and the app falls
+   back to demo mode automatically.
    ============================================================================ */
-      const BACKEND = "http://localhost:4000"; // ← set to 'http://localhost:4000' for a real backend
+      const BACKEND = "";
 
       let online = true;
       let seq = 0;
@@ -678,7 +682,6 @@
       /* LIVE MODE: seed a real session. Falls back to demo mode silently if the
    backend is not reachable, so the file always works. */
       async function connectLive() {
-        if (!BACKEND) return;
         try {
           const res = await fetch(`${BACKEND}/demo/session`, {
             method: "POST",
@@ -846,7 +849,7 @@
         /* LIVE MODE: actually push the batch to the real backend. The verdicts
      below then come from the production sync engine, not from a script. */
         let liveVerdicts = null;
-        if (BACKEND && session) {
+        if (session) {
           try {
             const res = await fetch(`${BACKEND}/api/v1/sync/push`, {
               method: "POST",

@@ -18,11 +18,24 @@ The hard problem is not the sync — it is what happens when the field and the o
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-HPA-326CE5?style=flat-square&logo=kubernetes&logoColor=white)
 ![Tests](https://img.shields.io/badge/tests-115%20passing-22c55e?style=flat-square)
 
+<br>
+
+**[Live demo](https://sanad.mohammed-hussein.me/)** · [Dispatch console](https://sanad.mohammed-hussein.me/dispatch) · [API health](https://sanad.mohammed-hussein.me/health) · [Grafana](https://sanad.mohammed-hussein.me/grafana/) · [Jaeger](https://sanad.mohammed-hussein.me/jaeger/) · [Prometheus](https://sanad.mohammed-hussein.me/prometheus/)
+
 </div>
 
 ---
 
 ## What this is
+
+Everything above is a running instance, not a screenshot: the driver PWA and dispatch console
+are the real app against a seeded demo org, and Grafana/Jaeger/Prometheus are the actual
+observability stack for that deployment, left open read-only so the internals aren't just
+claimed but inspectable. Full deployment setup: **[deploy/DEPLOY.md](deploy/DEPLOY.md)**.
+
+Note: the driver PWA and dispatch console frontends are not fully wired up to the deployed
+backend yet — use the `/demo/scenario/conflict` endpoint and the API directly to see the
+engine in action in the meantime.
 
 A driver loses signal at 13:40. At 14:02 he hands a parcel to a customer and taps **delivered** on a phone with no connectivity. At 14:30 the office, seeing no update and assuming he is stuck, **reassigns that job to someone else**. At 17:00 he reaches signal and his delivery syncs — three hours late, against a row that changed underneath him.
 
