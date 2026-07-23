@@ -141,4 +141,38 @@ async function sweepDemoOrgs(db, { olderThanHours = 1 } = {}) {
   return rowCount;
 }
 
-module.exports = { createDemoSeeder, sweepDemoOrgs };
+// The driver PWA and dispatch console are two separate public pages, each
+// hitting POST /demo/session independently on load. seedDemo() alone creates
+// a brand-new, isolated org per call — so the driver and the dispatcher were
+// never actually looking at the same business, and nothing one side did
+// could ever show up on the other's screen.
+//
+// This wraps seedDemo() in a single, short-lived, single-flight cache so
+// every visitor within the TTL window shares one org: deliver a job in the
+// driver app, and it is the same job the dispatch console's board is
+// reading. A single in-memory cache is enough because the prod overlay
+// runs exactly one api replica (see docker-compose.prod.yml).
+function createSharedDemoSession(seedDemo, { ttlMs = 30 * 60 * 1000 } = {}) {
+  let cached = null;
+  let cachedAt = 0;
+  let inflight = null;
+
+  return async function getSharedDemoSession() {
+    if (cached && Date.now() - cachedAt < ttlMs) return cached;
+    if (inflight) return inflight;
+
+    inflight = seedDemo()
+      .then((session) => {
+        cached = session;
+        cachedAt = Date.now();
+        return session;
+      })
+      .finally(() => {
+        inflight = null;
+      });
+
+    return inflight;
+  };
+}
+
+module.exports = { createDemoSeeder, sweepDemoOrgs, createSharedDemoSession };

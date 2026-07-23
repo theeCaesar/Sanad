@@ -3,11 +3,14 @@ const { randomUUID } = require('crypto');
 const catchAsync = require('../utils/catchAsync');
 const { sendOk } = require('../utils/response');
 
-function createDemoController({ db, syncService, jobRepo, seedDemo, logger }) {
+function createDemoController({ db, syncService, jobRepo, seedDemo, getSharedDemoSession, logger }) {
   const router = express.Router();
 
   router.post('/session', catchAsync(async (req, res) => {
-    const session = await seedDemo();
+    // Shared, not seeded fresh: the driver app and dispatch console each hit
+    // this on load, and they need to land in the SAME org or nothing either
+    // side does is ever visible to the other.
+    const session = await getSharedDemoSession();
 
     logger.info({ orgId: session.orgId }, 'demo: session created');
 

@@ -419,13 +419,16 @@ h2 b { color: var(--sand); font-weight: 600; }
   const ar = (n) => String(n).replace(/,/g, "٬").replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);
   const money = (n) => ar(Number(n).toLocaleString("en-US")) + " د.ع";
 
-  async function connectLive() {
-    try {
-      const sessionRes = await fetch(`${BACKEND}/demo/session`, { method: "POST" });
-      if (!sessionRes.ok) throw new Error(`session ${sessionRes.status}`);
-      const sessionBody = await sessionRes.json();
-      const auth = { Authorization: `Bearer ${sessionBody.data.dispatcher.access_token}` };
+  let auth = null;
+  const POLL_MS = 5000;
 
+  // This board reads a shared demo org (see src/db/seeds/demoSeed.js —
+  // createSharedDemoSession) that the driver app writes to. Without polling,
+  // a delivery made in the driver app would only ever appear here after a
+  // manual page reload, which reads as "the dashboard is broken" rather than
+  // "the dashboard hasn't asked again yet".
+  async function refreshBoard() {
+    try {
       const [devicesRes, cashRes, boardRes, conflictsRes] = await Promise.all([
         fetch(`${BACKEND}/api/v1/dispatch/devices`, { headers: auth }),
         fetch(`${BACKEND}/api/v1/reports/cash`, { headers: auth }),
@@ -442,6 +445,20 @@ h2 b { color: var(--sand); font-weight: 600; }
       const escalations = (await conflictsRes.json()).data.items;
 
       renderLive({ devices, cash, jobs, escalations });
+    } catch (e) {
+      console.warn("Dispatch refresh failed, keeping last known state:", e.message);
+    }
+  }
+
+  async function connectLive() {
+    try {
+      const sessionRes = await fetch(`${BACKEND}/demo/session`, { method: "POST" });
+      if (!sessionRes.ok) throw new Error(`session ${sessionRes.status}`);
+      const sessionBody = await sessionRes.json();
+      auth = { Authorization: `Bearer ${sessionBody.data.dispatcher.access_token}` };
+
+      await refreshBoard();
+      setInterval(refreshBoard, POLL_MS);
     } catch (e) {
       console.warn("Live backend not reachable — showing static demo:", e.message);
     }

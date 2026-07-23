@@ -22,7 +22,7 @@ const { createDispatchController } = require('./controllers/dispatchController')
 const { createReportController } = require('./controllers/reportController');
 const { createDemoController } = require('./controllers/demoController');
 
-const { createDemoSeeder } = require('./db/seeds/demoSeed');
+const { createDemoSeeder, createSharedDemoSession } = require('./db/seeds/demoSeed');
 
 function createContainer(overrides = {}) {
   const redis = overrides.redis || new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
@@ -66,8 +66,9 @@ function createContainer(overrides = {}) {
   const reportController = createReportController({ reportRepo });
 
   const seedDemo = createDemoSeeder({ db: database, authService, logger });
+  const getSharedDemoSession = createSharedDemoSession(seedDemo);
   const demoController = createDemoController({
-    db: database, syncService, jobRepo, seedDemo, logger,
+    db: database, syncService, jobRepo, seedDemo, getSharedDemoSession, logger,
   });
 
   return {
