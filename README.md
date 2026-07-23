@@ -33,9 +33,10 @@ are the real app against a seeded demo org, and Grafana/Jaeger/Prometheus are th
 observability stack for that deployment, left open read-only so the internals aren't just
 claimed but inspectable. Full deployment setup: **[deploy/DEPLOY.md](deploy/DEPLOY.md)**.
 
-Note: the driver PWA and dispatch console frontends are not fully wired up to the deployed
-backend yet — use the `/demo/scenario/conflict` endpoint and the API directly to see the
-engine in action in the meantime.
+The driver PWA seeds a real demo session and pushes real mutations through the sync engine;
+the dispatch console pulls its stats and driver roster from the same live data. Toggle
+"offline" in the driver app and watch a delivery actually queue, then resolve, against the
+production conflict resolver — not a script.
 
 A driver loses signal at 13:40. At 14:02 he hands a parcel to a customer and taps **delivered** on a phone with no connectivity. At 14:30 the office, seeing no update and assuming he is stuck, **reassigns that job to someone else**. At 17:00 he reaches signal and his delivery syncs — three hours late, against a row that changed underneath him.
 
