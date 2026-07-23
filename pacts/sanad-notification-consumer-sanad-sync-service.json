@@ -1,0 +1,244 @@
+{
+  "consumer": {
+    "name": "sanad-notification-consumer"
+  },
+  "messages": [
+    {
+      "contents": {
+        "device_id": "ce118b6e-d8e1-11e7-9296-cec278b6b50a",
+        "entity_id": "ce118b6e-d8e1-11e7-9296-cec278b6b50a",
+        "event_type": "job.delivered",
+        "happened_at": "2015-08-06T16:53:10.123+01:00",
+        "org_id": "ce118b6e-d8e1-11e7-9296-cec278b6b50a",
+        "status": "delivered",
+        "synced_at": "2015-08-06T16:53:10.123+01:00",
+        "user_id": "ce118b6e-d8e1-11e7-9296-cec278b6b50a",
+        "version": 2
+      },
+      "description": "a job.delivered event",
+      "matchingRules": {
+        "body": {
+          "$.device_id": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+              }
+            ]
+          },
+          "$.entity_id": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+              }
+            ]
+          },
+          "$.happened_at": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "^\\d{4}-[01]\\d-[0-3]\\dT[0-2]\\d:[0-5]\\d:[0-5]\\d\\.\\d+([+-][0-2]\\d(:?[0-5]\\d)?|Z)$"
+              }
+            ]
+          },
+          "$.org_id": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+              }
+            ]
+          },
+          "$.status": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "delivered"
+              }
+            ]
+          },
+          "$.synced_at": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "^\\d{4}-[01]\\d-[0-3]\\dT[0-2]\\d:[0-5]\\d:[0-5]\\d\\.\\d+([+-][0-2]\\d(:?[0-5]\\d)?|Z)$"
+              }
+            ]
+          },
+          "$.user_id": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+              }
+            ]
+          },
+          "$.version": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          }
+        },
+        "metadata": {}
+      },
+      "metadata": {
+        "content-type": "application/json",
+        "contentType": "application/json"
+      }
+    },
+    {
+      "contents": {
+        "device_wanted": {
+          "status": "delivered"
+        },
+        "entity_id": "ce118b6e-d8e1-11e7-9296-cec278b6b50a",
+        "event_type": "sync.conflict_escalated",
+        "mutation_id": "ce118b6e-d8e1-11e7-9296-cec278b6b50a",
+        "org_id": "ce118b6e-d8e1-11e7-9296-cec278b6b50a",
+        "reason": "Equal rank with overlapping fields. The system refuses to guess.",
+        "server_status": "accepted"
+      },
+      "description": "a sync.conflict_escalated event",
+      "matchingRules": {
+        "body": {
+          "$.device_wanted": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          },
+          "$.entity_id": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+              }
+            ]
+          },
+          "$.mutation_id": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+              }
+            ]
+          },
+          "$.org_id": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+              }
+            ]
+          },
+          "$.reason": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          },
+          "$.server_status": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          }
+        },
+        "metadata": {}
+      },
+      "metadata": {
+        "content-type": "application/json",
+        "contentType": "application/json"
+      }
+    },
+    {
+      "contents": {
+        "event_type": "stock.low",
+        "org_id": "ce118b6e-d8e1-11e7-9296-cec278b6b50a",
+        "product_id": "ce118b6e-d8e1-11e7-9296-cec278b6b50a",
+        "remaining": 3,
+        "user_id": "ce118b6e-d8e1-11e7-9296-cec278b6b50a"
+      },
+      "description": "a stock.low event",
+      "matchingRules": {
+        "body": {
+          "$.org_id": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+              }
+            ]
+          },
+          "$.product_id": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+              }
+            ]
+          },
+          "$.remaining": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          },
+          "$.user_id": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+              }
+            ]
+          }
+        },
+        "metadata": {}
+      },
+      "metadata": {
+        "content-type": "application/json",
+        "contentType": "application/json"
+      }
+    }
+  ],
+  "metadata": {
+    "pact-js": {
+      "version": "12.5.2"
+    },
+    "pactRust": {
+      "ffi": "0.4.20",
+      "models": "1.2.0"
+    },
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "provider": {
+    "name": "sanad-sync-service"
+  }
+}

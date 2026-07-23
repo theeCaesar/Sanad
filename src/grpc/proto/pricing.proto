@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package sanad.pricing.v1;
+
+service PricingService {
+  rpc PriceAndReserve(PriceRequest) returns (PriceResponse);
+
+  rpc Quote(QuoteRequest) returns (QuoteResponse);
+
+  rpc WatchStock(WatchStockRequest) returns (stream StockUpdate);
+}
+
+message OrderLine {
+  string product_id = 1;
+  int32 quantity = 2;
+}
+
+message PriceRequest {
+  string org_id = 1;
+  string user_id = 2;
+  string idempotency_key = 3;
+  repeated OrderLine lines = 4;
+}
+
+message PricedLine {
+  string product_id = 1;
+  int32 quantity = 2;
+  int64 unit_price = 3;
+  int64 line_total = 4;
+}
+
+message PriceResponse {
+  bool ok = 1;
+  int64 total = 2;
+  repeated PricedLine lines = 3;
+
+  enum Rejection {
+    REJECTION_UNSPECIFIED = 0;
+    INSUFFICIENT_STOCK = 1;
+    UNKNOWN_PRODUCT = 2;
+    PRODUCT_INACTIVE = 3;
+  }
+  Rejection rejection = 4;
+  string rejection_detail = 5;
+  string reservation_id = 6;
+}
+
+message QuoteRequest {
+  string org_id = 1;
+  repeated OrderLine lines = 2;
+}
+
+message QuoteResponse {
+  int64 total = 1;
+  repeated PricedLine lines = 2;
+}
+
+message WatchStockRequest {
+  string org_id = 1;
+  string user_id = 2;
+  repeated string product_ids = 3;
+}
+
+message StockUpdate {
+  string product_id = 1;
+  int32 remaining = 2;
+  bool low = 3;
+  string at = 4;
+}

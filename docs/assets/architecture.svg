@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 620" width="900" height="620" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+    <linearGradient id="core" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#4338ca"/>
+    </linearGradient>
+    <linearGradient id="data" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0ea5e9"/>
+      <stop offset="100%" stop-color="#0369a1"/>
+    </linearGradient>
+    <linearGradient id="stream" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#047857"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrowLight" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect width="900" height="620" fill="#0f172a"/>
+
+  <text x="34" y="42" fill="#f1f5f9" font-size="19" font-weight="700">Sanad — system architecture</text>
+  <text x="34" y="64" fill="#94a3b8" font-size="12.5">Offline-first field operations. Devices hold authority for hours; the server reconciles on reconnect.</text>
+
+  <!-- EDGE -->
+  <text x="34" y="106" fill="#fbbf24" font-size="11" font-weight="700" letter-spacing="1.4">EDGE — REST</text>
+  <g>
+    <rect x="34" y="118" width="170" height="86" rx="10" fill="url(#edge)" opacity="0.16" stroke="#f59e0b" stroke-width="1.3"/>
+    <text x="50" y="142" fill="#fcd34d" font-size="13" font-weight="600">Driver PWA</text>
+    <text x="50" y="162" fill="#cbd5e1" font-size="10.5">IndexedDB write queue</text>
+    <text x="50" y="178" fill="#cbd5e1" font-size="10.5">Works fully offline</text>
+    <text x="50" y="194" fill="#94a3b8" font-size="10">Arabic-first, RTL</text>
+  </g>
+  <g>
+    <rect x="222" y="118" width="170" height="86" rx="10" fill="url(#edge)" opacity="0.16" stroke="#f59e0b" stroke-width="1.3"/>
+    <text x="238" y="142" fill="#fcd34d" font-size="13" font-weight="600">Dispatch console</text>
+    <text x="238" y="162" fill="#cbd5e1" font-size="10.5">Conflict inbox + timeline</text>
+    <text x="238" y="178" fill="#cbd5e1" font-size="10.5">Live map (Socket.IO)</text>
+    <text x="238" y="194" fill="#94a3b8" font-size="10">GraphQL reads</text>
+  </g>
+
+  <path d="M119,204 L119,238" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M307,204 L307,238" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="128" y="226" fill="#94a3b8" font-size="9.5">POST /sync/push</text>
+
+  <!-- SYNC CORE -->
+  <rect x="34" y="242" width="358" height="150" rx="12" fill="url(#core)" opacity="0.18" stroke="#6366f1" stroke-width="1.6"/>
+  <text x="50" y="266" fill="#c7d2fe" font-size="13.5" font-weight="700">Sync core</text>
+  <text x="50" y="285" fill="#94a3b8" font-size="10">one transaction per mutation · partial batch success</text>
+
+  <g font-size="10.5" fill="#e2e8f0">
+    <text x="52" y="308">1 · dedupe (client-generated id)</text>
+    <text x="52" y="326">2 · lock row · authorize · validate</text>
+    <text x="52" y="344">3 · detect version conflict</text>
+    <text x="52" y="362">4 · arbitrate → apply</text>
+    <text x="52" y="380">5 · ledger + outbox, same txn</text>
+  </g>
+  <rect x="248" y="296" width="132" height="88" rx="8" fill="#1e1b4b" stroke="#818cf8" stroke-width="1.1"/>
+  <text x="262" y="316" fill="#c7d2fe" font-size="10.5" font-weight="600">conflictResolver</text>
+  <text x="262" y="333" fill="#94a3b8" font-size="9">pure · zero imports</text>
+  <text x="262" y="350" fill="#a5b4fc" font-size="9">physical &gt; admin</text>
+  <text x="262" y="365" fill="#a5b4fc" font-size="9">&gt; progress &gt; initial</text>
+  <text x="262" y="379" fill="#94a3b8" font-size="9">tie → escalate</text>
+
+  <!-- gRPC pricing -->
+  <path d="M392,300 L470,300" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="400" y="293" fill="#94a3b8" font-size="9.5">gRPC</text>
+  <rect x="474" y="264" width="164" height="76" rx="10" fill="#1e293b" stroke="#a78bfa" stroke-width="1.3"/>
+  <text x="490" y="288" fill="#ddd6fe" font-size="12" font-weight="600">Pricing service</text>
+  <text x="490" y="306" fill="#94a3b8" font-size="10">protobuf contract</text>
+  <text x="490" y="322" fill="#94a3b8" font-size="10">idempotent reserve</text>
+  <text x="490" y="336" fill="#94a3b8" font-size="9.5">+ streaming stock watch</text>
+
+  <!-- POSTGRES -->
+  <path d="M213,392 L213,432" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="34" y="436" width="290" height="128" rx="12" fill="url(#data)" opacity="0.18" stroke="#0ea5e9" stroke-width="1.5"/>
+  <text x="50" y="460" fill="#bae6fd" font-size="13.5" font-weight="700">PostgreSQL</text>
+  <g font-size="10.5" fill="#e2e8f0">
+    <text x="52" y="482">jobs · orders · van_stock · cash</text>
+    <text x="52" y="500">mutations — append-only ledger</text>
+    <text x="52" y="518">outbox — events, written in-txn</text>
+    <text x="52" y="536">processed_events · sagas</text>
+    <text x="52" y="554" fill="#7dd3fc">version column = conflict detector</text>
+  </g>
+
+  <!-- OUTBOX PUBLISHER -->
+  <path d="M324,500 L392,500" stroke="#94a3b8" stroke-width="1.4" marker-end="url(#arrowLight)"/>
+  <text x="330" y="493" fill="#94a3b8" font-size="9">poll</text>
+  <rect x="396" y="470" width="150" height="60" rx="9" fill="#1e293b" stroke="#34d399" stroke-width="1.2"/>
+  <text x="410" y="492" fill="#a7f3d0" font-size="11.5" font-weight="600">Outbox publisher</text>
+  <text x="410" y="509" fill="#94a3b8" font-size="9.5">SKIP LOCKED · N replicas</text>
+  <text x="410" y="523" fill="#94a3b8" font-size="9.5">at-least-once · DLQ</text>
+
+  <!-- KAFKA -->
+  <path d="M546,500 L604,500" stroke="#94a3b8" stroke-width="1.4" marker-end="url(#arrowLight)"/>
+  <rect x="608" y="470" width="104" height="60" rx="9" fill="url(#stream)" opacity="0.2" stroke="#10b981" stroke-width="1.4"/>
+  <text x="624" y="494" fill="#a7f3d0" font-size="12.5" font-weight="700">Kafka</text>
+  <text x="622" y="512" fill="#94a3b8" font-size="9">keyed by entity_id</text>
+  <text x="622" y="525" fill="#94a3b8" font-size="9">ordered per job</text>
+
+  <!-- CONSUMERS -->
+  <path d="M712,486 L768,462" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arrowLight)"/>
+  <path d="M712,512 L768,536" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arrowLight)"/>
+  <rect x="772" y="434" width="106" height="52" rx="8" fill="#1e293b" stroke="#34d399" stroke-width="1.1"/>
+  <text x="784" y="454" fill="#a7f3d0" font-size="10.5" font-weight="600">notifications</text>
+  <text x="784" y="470" fill="#94a3b8" font-size="9">idempotent group</text>
+  <rect x="772" y="514" width="106" height="52" rx="8" fill="#1e293b" stroke="#34d399" stroke-width="1.1"/>
+  <text x="784" y="534" fill="#a7f3d0" font-size="10.5" font-weight="600">analytics</text>
+  <text x="784" y="550" fill="#94a3b8" font-size="9">replay from offset 0</text>
+
+  <!-- OBSERVABILITY -->
+  <rect x="474" y="118" width="404" height="120" rx="12" fill="#1e293b" opacity="0.75" stroke="#475569" stroke-width="1.2"/>
+  <text x="490" y="142" fill="#e2e8f0" font-size="12.5" font-weight="700">Observability</text>
+  <g font-size="10" fill="#cbd5e1">
+    <text x="492" y="164">Prometheus — 4 scrape targets</text>
+    <text x="492" y="182">Grafana — provisioned dashboard</text>
+    <text x="492" y="200">Jaeger — OTLP traces (HTTP/Express)</text>
+    <text x="492" y="218">structured JSON logs + trace id</text>
+  </g>
+  <rect x="700" y="152" width="164" height="72" rx="8" fill="#0f172a" stroke="#f59e0b" stroke-width="1.2"/>
+  <text x="712" y="172" fill="#fcd34d" font-size="10.5" font-weight="600">sync_dark_seconds</text>
+  <text x="712" y="189" fill="#94a3b8" font-size="9">happened_at → received_at</text>
+  <text x="712" y="204" fill="#94a3b8" font-size="9">how long a device was dark</text>
+  <text x="712" y="218" fill="#94a3b8" font-size="9">p50 / p95 per driver</text>
+
+  <text x="34" y="596" fill="#64748b" font-size="9.5">REST at the edge · gRPC between services · GraphQL for dashboard reads · writes stay on the sync protocol</text>
+</svg>

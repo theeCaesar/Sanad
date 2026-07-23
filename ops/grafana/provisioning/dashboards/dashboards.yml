@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: sanad
+    folder: 'Sanad'
+    type: file
+    options:
+      path: /etc/grafana/provisioning/dashboards

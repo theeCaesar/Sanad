@@ -1,0 +1,326 @@
+{
+  "info": {
+    "name": "Sanad — Offline-First Field Operations",
+    "description": "The sync protocol, the conflict scenario, dispatch, and reports.\n\n## Run this first\n\n1. **Demo → Create session** — seeds a throwaway org and sets every variable you need.\n2. **The Conflict Scenario** folder — run the three requests in order. That is the whole system in 30 seconds.\n\n## The one thing to understand\n\nA field device never calls a normal REST endpoint to change state. It appends a **mutation** to a local queue and pushes a batch to `POST /sync/push` when it has signal.\n\nEvery mutation carries:\n- `mutation_id` — a **client-generated** UUID. The idempotency key. Generated on the device precisely so a retry is provably the same act.\n- `seq` — a per-device monotonic counter. The order the human *acted*, which is not the order the packets arrived.\n- `client_ts` — when it **happened**, in the field. Not when it arrived.\n- `base_version` — the row version the device last saw. **This one integer is the entire conflict-detection mechanism.**",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:4000" },
+    { "key": "api", "value": "{{base_url}}/api/v1" },
+    { "key": "device_token", "value": "" },
+    { "key": "dispatcher_token", "value": "" },
+    { "key": "session_id", "value": "" },
+    { "key": "device_id", "value": "" },
+    { "key": "driver_id", "value": "" },
+    { "key": "other_driver_id", "value": "" },
+    { "key": "job_id", "value": "" },
+    { "key": "job_version", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0 · Demo",
+      "item": [
+        {
+          "name": "Create session (RUN THIS FIRST)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "pm.collectionVariables.set('session_id', d.session_id);",
+                  "pm.collectionVariables.set('device_token', d.driver.device_token);",
+                  "pm.collectionVariables.set('dispatcher_token', d.dispatcher.access_token);",
+                  "pm.collectionVariables.set('device_id', d.driver.device_id);",
+                  "pm.collectionVariables.set('driver_id', d.driver.user.id);",
+                  "",
+                  "// JOB-1001 is staged at picked_up — one tap from delivered.",
+                  "// A demo that takes five minutes to reach the interesting part",
+                  "// is a demo nobody sees the interesting part of.",
+                  "const job = d.jobs[0];",
+                  "pm.collectionVariables.set('job_id', job.id);",
+                  "pm.collectionVariables.set('job_version', job.version);",
+                  "",
+                  "pm.test('session ready', () => pm.response.to.have.status(200));",
+                  "console.log('Now run the Conflict Scenario folder, in order.');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/demo/session",
+            "description": "Seeds a throwaway org: 2 drivers, 1 dispatcher, 1 registered device, 5 jobs, van stock. Self-destructs in an hour.\n\nIsolation comes free: a demo session is **just another org**, using the same tenant scoping that separates two real paying customers. There is no special sandbox code path — which is exactly where a vulnerability would hide."
+          }
+        },
+        {
+          "name": "Run the whole conflict scenario server-side",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/demo/scenario/conflict",
+            "description": "For when you have 30 seconds and will not click through six requests.\n\nRuns the entire Abu Ghraib scenario end-to-end and returns a **narrated, timestamped transcript** — including the resolver's actual reason string, straight from the production code. Nothing here is scripted or simulated."
+          }
+        },
+        {
+          "name": "Peek behind the curtain",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/demo/curtain/{{session_id}}",
+            "description": "The mutation ledger, the outbox rows (watch one flip `pending` → `published`), the conflict decisions with reasons, and the current job versions.\n\nEvery row is a real row in Postgres, written by the real sync engine in a real transaction."
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 · The Conflict Scenario",
+      "description": "**Run these three in order.** This is the system.\n\n| time | who | what |\n|---|---|---|\n| 14:02 | driver | delivers the parcel. **Offline.** |\n| 14:30 | dispatcher | sees no update, **reassigns the job** |\n| 17:00 | driver | reaches wifi. The delivery syncs, 3 hours late |\n\n**Who wins?**",
+      "item": [
+        {
+          "name": "Step 1 · Dispatcher REASSIGNS the job (14:30)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('reassigned — the row version has moved', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const job = pm.response.json().data;",
+                  "  pm.expect(job.version).to.be.above(Number(pm.collectionVariables.get('job_version')));",
+                  "  console.log('Version moved to ' + job.version + '. The device is now stale and does not know it.');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{dispatcher_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assigned_to\": \"{{other_driver_id}}\",\n  \"expected_version\": {{job_version}}\n}"
+            },
+            "url": "{{api}}/dispatch/jobs/{{job_id}}",
+            "description": "The office assumes the driver is stuck and hands the job to someone else.\n\nThis is a **reasonable** decision given what the office can see. It is about to turn out to be wrong.\n\nNote: the dispatcher goes through the **same optimistic-version check a device does**. The office is not privileged in the concurrency model — it is just another writer, and it can lose a race too. Treating the office as automatically authoritative is precisely the assumption that produces a delivered parcel marked as still out for delivery."
+          }
+        },
+        {
+          "name": "Step 2 · Driver's DELIVERY syncs, 3 hours late (17:00)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set('mutation_id', require('uuid').v4?.() || ",
+                  "  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                  "    const r = Math.random()*16|0, v = c === 'x' ? r : (r&0x3|0x8);",
+                  "    return v.toString(16);",
+                  "  }));"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json().data.results[0];",
+                  "",
+                  "pm.test('FIELD_WINS — the delivery beat the reassignment', () => {",
+                  "  pm.expect(r.outcome).to.eql('conflict');",
+                  "  pm.expect(r.resolution).to.eql('field_wins');",
+                  "});",
+                  "",
+                  "console.log('');",
+                  "console.log('═══════════════════════════════════════════════');",
+                  "console.log('RESOLUTION: ' + r.resolution.toUpperCase());",
+                  "console.log('');",
+                  "console.log(r.reason);",
+                  "console.log('═══════════════════════════════════════════════');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{device_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mutations\": [\n    {\n      \"mutation_id\": \"{{mutation_id}}\",\n      \"seq\": 1,\n      \"type\": \"job.deliver\",\n      \"entity_id\": \"{{job_id}}\",\n      \"base_version\": {{job_version}},\n      \"client_ts\": \"2026-07-13T14:02:00.000Z\",\n      \"payload\": {\n        \"recipient_name\": \"Um Ahmed\",\n        \"note\": \"Handed over at the gate.\"\n      }\n    }\n  ]\n}"
+            },
+            "url": "{{api}}/sync/push",
+            "description": "**The moment of truth.**\n\nNote `base_version` — the version the device saw before it went dark. The office has moved the row since. `base_version !== server_version`, so a **conflict is detected**, and that one integer comparison is the entire mechanism.\n\nNote `client_ts` — **14:02**, when the parcel physically changed hands. Not now.\n\nThe resolver runs:\n\n> `delivered` is **PHYSICAL** (rank 3). The server holds a **PROGRESS** state after an office reassignment (rank 1). **Physical truth outranks administrative intent.**\n\n**The delivery wins.** Read the `reason` field in the response — it is the actual output of the production resolver, and it is what the dispatcher will be shown."
+          }
+        },
+        {
+          "name": "Step 3 · The full history — every hand that touched this job",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{dispatcher_token}}" }],
+            "url": "{{api}}/jobs/{{job_id}}/history",
+            "description": "Every mutation, from the field and the office, with **`dark_seconds`** on each — the gap between when a person **acted** and when we **heard**.\n\nThat number exists only because every mutation stores *both* `client_ts` and `received_at`. **A normal API throws the first one away**, because a normal API assumes the two are the same moment.\n\nThis is the endpoint that turns *\"why does this row look like this?\"* from a shrug into an answer."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 · Sync protocol",
+      "item": [
+        {
+          "name": "Push — a batch from a device that was dark all afternoon",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{device_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mutations\": [\n    {\n      \"mutation_id\": \"11111111-1111-4111-8111-111111111111\",\n      \"seq\": 1,\n      \"type\": \"job.accept\",\n      \"entity_id\": \"{{job_id}}\",\n      \"base_version\": 1,\n      \"client_ts\": \"2026-07-13T09:15:00.000Z\",\n      \"payload\": {}\n    },\n    {\n      \"mutation_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"seq\": 2,\n      \"type\": \"job.pickup\",\n      \"entity_id\": \"{{job_id}}\",\n      \"base_version\": 2,\n      \"client_ts\": \"2026-07-13T09:40:00.000Z\",\n      \"payload\": {}\n    },\n    {\n      \"mutation_id\": \"33333333-3333-4333-8333-333333333333\",\n      \"seq\": 3,\n      \"type\": \"cash.collect\",\n      \"entity_id\": \"{{job_id}}\",\n      \"base_version\": 3,\n      \"client_ts\": \"2026-07-13T14:05:00.000Z\",\n      \"payload\": { \"amount\": 25000 }\n    }\n  ]\n}"
+            },
+            "url": "{{api}}/sync/push",
+            "description": "**Partial success is the NORMAL outcome, not an error.** A batch of 40 from a driver offline all afternoon might land 37 applied, 2 duplicates from a retry, and 1 conflict where the office cancelled a job. That is a **200** — the sync worked. The *mutations* are what have verdicts.\n\nMutations are applied in **`seq` order**, not arrival order. Sent shuffled (a retry, a partial upload), `deliver` before `pickup` would be rejected as an illegal transition and **a real delivery would be lost to a networking artefact**."
+          }
+        },
+        {
+          "name": "Push the SAME batch again (idempotency)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{device_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mutations\": [\n    {\n      \"mutation_id\": \"33333333-3333-4333-8333-333333333333\",\n      \"seq\": 3,\n      \"type\": \"cash.collect\",\n      \"entity_id\": \"{{job_id}}\",\n      \"base_version\": 3,\n      \"client_ts\": \"2026-07-13T14:05:00.000Z\",\n      \"payload\": { \"amount\": 25000 }\n    }\n  ]\n}"
+            },
+            "url": "{{api}}/sync/push",
+            "description": "**Same `mutation_id`. Run it as many times as you like.**\n\nReturns `duplicate`. The cash is counted **once**.\n\nThis is not theoretical. On a bad link the device uploads, the server applies it, and the **response is lost on the way back**. The device concludes it failed and retries. Without dedupe, every dropped ACK becomes a double delivery, a double stock decrement, and a double cash entry.\n\n`mutation_id` is the **PRIMARY KEY** of the mutation ledger and **UNIQUE** on the cash ledger. Not a `SELECT` — a `SELECT`-then-`INSERT` races between two API replicas. **Only the unique index is atomic across processes.**"
+          }
+        },
+        {
+          "name": "Pull — what changed while I was dark",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{device_token}}" }],
+            "url": "{{api}}/sync/pull?since=2026-07-13T08:00:00.000Z",
+            "description": "Scoped to the driver's **own** assignments — derived from his token, never from a parameter. There is no query string he could send that would widen it.\n\nThat is the BOLA defence, closed at the **query** rather than in a middleware someone can forget to attach."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 · Security probes (these SHOULD fail)",
+      "description": "Every one of these is an attack. Every one is refused. Run them.",
+      "item": [
+        {
+          "name": "BOLA — mutate a job assigned to another driver",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{device_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mutations\": [\n    {\n      \"mutation_id\": \"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\",\n      \"seq\": 99,\n      \"type\": \"job.deliver\",\n      \"entity_id\": \"PUT_ANOTHER_DRIVERS_JOB_ID_HERE\",\n      \"base_version\": 1,\n      \"client_ts\": \"2026-07-13T14:02:00.000Z\",\n      \"payload\": {}\n    }\n  ]\n}"
+            },
+            "url": "{{api}}/sync/push",
+            "description": "**Expected: `rejected` — \"This item is not assigned to you.\"**\n\nThe job exists. The caller is authenticated. **Neither of those means he is allowed to touch THIS ONE.**\n\nAnd the attempt is **recorded in the ledger**. A rejected BOLA attempt is a security event, and throwing it away means you never find out you are being probed."
+          }
+        },
+        {
+          "name": "Mass assignment — set my own price",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{device_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mutations\": [\n    {\n      \"mutation_id\": \"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\",\n      \"seq\": 98,\n      \"type\": \"job.deliver\",\n      \"entity_id\": \"{{job_id}}\",\n      \"base_version\": 1,\n      \"client_ts\": \"2026-07-13T14:02:00.000Z\",\n      \"payload\": {\n        \"recipient_name\": \"Um Ahmed\",\n        \"price\": 999999,\n        \"cod_amount\": 0,\n        \"assigned_to\": \"{{driver_id}}\"\n      }\n    }\n  ]\n}"
+            },
+            "url": "{{api}}/sync/push",
+            "description": "**Expected: refused as a mass-assignment attempt.**\n\nNote the attack: the malicious fields are wrapped inside a **genuine delivery**. The delivery is physical, so it would win under the core rule — and the `price` change would ride along on a legitimate decision.\n\nIt does not, because **the allowlist check runs FIRST, before any resolution logic.**\n\n**Order of checks is a security property.**"
+          }
+        },
+        {
+          "name": "Wrong token type — device token on a dashboard endpoint",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{device_token}}" }],
+            "url": "{{api}}/dispatch/board",
+            "description": "**Expected: 401 `WRONG_TOKEN_TYPE`.**\n\nA device token lives for **90 days** — it has to, because a driver is dark for nine hours and cannot refresh. That is only safe because it authorises so little: it opens `/sync` and **nothing else**.\n\nWithout this check, a 90-day token would read the entire fleet, and the whole scope/lifetime argument collapses.\n\n> **The scope of a credential should be inversely proportional to its lifetime.**"
+          }
+        },
+        {
+          "name": "Tenant escape — supply my own org_id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{dispatcher_token}}" }],
+            "url": "{{api}}/jobs?org_id=some-other-company",
+            "description": "**Expected: 400 — refused, and logged.**\n\n`org_id` **always** comes from the verified token. There is a middleware that rejects any request that even *tries* to supply one — **loudly**, because a client sending `org_id` is either a bug worth finding or an attack worth logging."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 · Dispatch & reports",
+      "item": [
+        {
+          "name": "The board",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{dispatcher_token}}" }],
+            "url": "{{api}}/dispatch/board"
+          }
+        },
+        {
+          "name": "Conflict inbox — what the system refused to guess at",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{dispatcher_token}}" }],
+            "url": "{{api}}/dispatch/conflicts",
+            "description": "Escalations. Each has the device's version and the server's version attached, and the system **deliberately did not act**.\n\nAn escalation is not a failure of the design — **it is the design refusing to invent an answer it does not have.**\n\n> A **rising** escalation rate means reality contains a case the rules do not cover. That is the system telling you the truth.\n>\n> The failure mode to fear is an escalation rate of **zero**, achieved by guessing."
+          }
+        },
+        {
+          "name": "Fleet health — who is dark, and for how long",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{dispatcher_token}}" }],
+            "url": "{{api}}/dispatch/devices",
+            "description": "A device that is *dark* is not necessarily broken — that is the **normal condition** in the field. What matters is whether it comes back.\n\nA device in `long_dark` is carrying unsynced work **that nobody can see yet**. The system cannot tell whether that driver is in a coverage hole or has gone home with twelve deliveries on his phone — but it can **tell you that it cannot tell**, which is infinitely better than a dashboard that quietly shows everything as fine."
+          }
+        },
+        {
+          "name": "Dark-time report — the number nobody else has",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{dispatcher_token}}" }],
+            "url": "{{api}}/reports/dark-time",
+            "description": "**How long, typically, between a driver DOING something and the system HEARING about it?** p50, p95, worst case, per driver.\n\nThis exists **only** because every mutation stores both `client_ts` and `received_at`. A normal API throws the first one away.\n\nAnd it is genuinely useful to the business, not just a nice graph: a driver whose **p95 dark time is six hours** is working a route with **no coverage**. That is a fact about the physical world, derived from database timestamps — and you can act on it."
+          }
+        },
+        {
+          "name": "Cash reconciliation",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{dispatcher_token}}" }],
+            "url": "{{api}}/reports/cash",
+            "description": "`outstanding = collected − remitted`. The report where money actually goes missing.\n\nCorrect **by construction**: `cash_entries` is append-only and `mutation_id` is `UNIQUE`. A driver who syncs the same batch twice on a bad network **physically cannot** double-count a collection — the database refuses the second insert."
+          }
+        }
+      ]
+    }
+  ]
+}

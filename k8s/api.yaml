@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sanad-api
+  namespace: sanad
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: sanad-api }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+spec_template: &tmpl
+  metadata:
+    labels: { app: sanad-api }
+  spec:
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      fsGroup: 1000
+    containers:
+      - name: api
+        image: ghcr.io/mohammed/sanad:latest
+        ports: [{ containerPort: 4000 }]
+
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: { drop: ['ALL'] }
+
+        env:
+          - name: DATABASE_URL
+            valueFrom: { secretKeyRef: { name: sanad-secrets, key: database-url } }
+          - name: JWT_ACCESS_SECRET
+            valueFrom: { secretKeyRef: { name: sanad-secrets, key: jwt-access } }
+          - name: JWT_REFRESH_SECRET
+            valueFrom: { secretKeyRef: { name: sanad-secrets, key: jwt-refresh } }
+          - name: REDIS_URL
+            valueFrom: { configMapKeyRef: { name: sanad-config, key: redis-url } }
+          - name: KAFKA_BROKERS
+            valueFrom: { configMapKeyRef: { name: sanad-config, key: kafka-brokers } }
+          - name: NODE_ENV
+            value: production
+
+        livenessProbe:
+          httpGet: { path: /health, port: 4000 }
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet: { path: /ready, port: 4000 }
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 2
+
+        startupProbe:
+          httpGet: { path: /health, port: 4000 }
+          failureThreshold: 30
+          periodSeconds: 2
+
+        resources:
+          requests: { cpu: 200m, memory: 256Mi }
+          limits: { cpu: 1000m, memory: 512Mi }
+
+        lifecycle:
+          preStop:
+            exec:
+              command: ['sh', '-c', 'sleep 10']
+
+    terminationGracePeriodSeconds: 60
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sanad-api
+  namespace: sanad
+spec:
+  selector: { app: sanad-api }
+  ports:
+    - port: 80
+      targetPort: 4000
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: sanad-api
+  namespace: sanad
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: sanad-api
+  minReplicas: 3
+  maxReplicas: 30
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 65 }
+
+    - type: Pods
+      pods:
+        metric: { name: sync_batch_size }
+        target: { type: AverageValue, averageValue: '50' }
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sanad-api
+  namespace: sanad
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels: { app: sanad-api }

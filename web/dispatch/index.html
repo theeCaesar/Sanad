@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>سند — لوحة المكتب</title>
+
+<!--
+  ============================================================================
+  THE DISPATCHER DASHBOARD
+  ============================================================================
+
+  Who this is for: Abu Karrar. 45. Owns a delivery company in Baghdad, 30
+  drivers. Runs his whole business on WhatsApp. He is not technical and he
+  never will be, and he is the person who decides whether to buy this.
+
+  WHAT HE ACTUALLY WORRIES ABOUT, in order:
+    1. Where is my money?           → cash outstanding, per driver
+    2. Which drivers have gone dark? → and are they carrying work I cannot see?
+    3. Did anything go wrong?        → and did the system handle it, or does it
+                                        need me?
+
+  So those are the three things on the screen, in that order. Nothing else.
+
+  THE HARD PART OF THIS DESIGN:
+    Explaining an automatic conflict resolution to a man who does not know what
+    a "conflict" is — and doing it in a way that makes him TRUST the machine
+    rather than resent it.
+
+    The system overrode his dispatcher's decision. That is a big deal. If it
+    just did that silently, he would eventually turn the feature off.
+
+    So the card does not say "FIELD_WINS". It says, in effect:
+        "Ali delivered it at 2:02. Your office reassigned it at 2:30, but by
+         then it was already in the customer's hands. We kept the delivery."
+    And then, crucially, it says WHY that is the right answer.
+  ============================================================================
+-->
+
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --ink:      #0F1B24;
+  --ink-2:    #16262F;
+  --ink-3:    #1E323C;
+  --sand:     #E8DCC8;
+  --sand-dim: #8E8271;
+
+  --live:    #2ECC71;   /* connected / all good */
+  --offline: #F0A500;   /* dark, but NOT broken */
+  --danger:  #E5484D;   /* actually needs him */
+
+  font-family: 'IBM Plex Sans Arabic', system-ui, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--ink); color: var(--sand); min-height: 100vh; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---- top bar ---- */
+header {
+  padding: 18px 26px;
+  border-bottom: 1px solid var(--ink-3);
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--ink-2);
+}
+.brand { font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
+.brand span { color: var(--live); }
+.today { font-size: 13px; color: var(--sand-dim); }
+
+/* ---- layout ---- */
+.wrap { max-width: 1240px; margin: 0 auto; padding: 26px; }
+
+/* ---- 1. THE MONEY. First thing he looks at, so first thing on the page. ---- */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+
+.stat {
+  background: var(--ink-2);
+  border: 1px solid var(--ink-3);
+  border-radius: 14px;
+  padding: 18px 20px;
+}
+.stat-label { font-size: 12.5px; color: var(--sand-dim); }
+.stat-val { font-size: 27px; font-weight: 700; margin-top: 7px; letter-spacing: -.02em; }
+.stat-note { font-size: 12px; color: var(--sand-dim); margin-top: 6px; line-height: 1.5; }
+.stat.money .stat-val { color: var(--live); }
+.stat.dark  .stat-val { color: var(--offline); }
+.stat.needs .stat-val { color: var(--danger); }
+
+/* ---- section headers ---- */
+h2 {
+  font-size: 14px; font-weight: 600;
+  color: var(--sand-dim);
+  margin: 30px 2px 13px;
+  display: flex; align-items: center; gap: 9px;
+}
+h2 b { color: var(--sand); font-weight: 600; }
+
+/* ---- 2. DRIVERS ---- */
+.drivers { display: grid; gap: 10px; }
+
+.driver {
+  background: var(--ink-2);
+  border: 1px solid var(--ink-3);
+  border-radius: 13px;
+  padding: 15px 18px;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 16px;
+}
+/* Amber right edge (RTL) = dark. Not an error. A weather report. */
+.driver.is-dark { border-right: 3px solid var(--offline); }
+
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--live); flex-shrink: 0; }
+.driver.is-dark .dot { background: var(--offline); }
+
+.d-name { font-size: 15.5px; font-weight: 600; }
+.d-sub  { font-size: 12.5px; color: var(--sand-dim); margin-top: 3px; }
+
+.d-cash { text-align: left; }
+.d-cash-val { font-size: 16px; font-weight: 700; }
+.d-cash-lbl { font-size: 11.5px; color: var(--sand-dim); margin-top: 2px; }
+
+.d-pending {
+  min-width: 64px;
+  text-align: center;
+  padding: 7px 11px;
+  border-radius: 9px;
+  background: rgba(240,165,0,.11);
+  border: 1px solid rgba(240,165,0,.24);
+}
+.d-pending-val { font-size: 16px; font-weight: 700; color: var(--offline); }
+.d-pending-lbl { font-size: 10px; color: var(--sand-dim); margin-top: 1px; }
+.d-pending.none { background: transparent; border-color: var(--ink-3); }
+.d-pending.none .d-pending-val { color: var(--sand-dim); }
+
+/* ---- 3. THE CONFLICT CARD. The hardest thing on this page. ---- */
+.conflict {
+  background: linear-gradient(180deg, rgba(240,165,0,.055), transparent);
+  border: 1px solid rgba(240,165,0,.28);
+  border-radius: 14px;
+  padding: 20px 22px;
+}
+
+.c-head { display: flex; align-items: center; gap: 11px; margin-bottom: 4px; }
+.c-badge {
+  font-size: 11.5px; font-weight: 700;
+  padding: 5px 11px; border-radius: 999px;
+  background: rgba(240,165,0,.16); color: var(--offline);
+}
+.c-ref { font-size: 13px; color: var(--sand-dim); }
+
+/* THE TIMELINE. This is the whole explanation, and it is a TIMELINE because
+   the ANSWER IS ABOUT TIME — the office acted after the parcel was already
+   delivered. Once he sees the two times next to each other, he gets it
+   instantly, and no prose was needed. */
+.tl { margin: 18px 0 0; padding-right: 8px; border-right: 2px solid var(--ink-3); }
+
+.tl-row { position: relative; padding: 0 20px 20px 0; }
+.tl-row:last-child { padding-bottom: 0; }
+.tl-row::before {
+  content: ''; position: absolute; right: -9px; top: 5px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--ink-3); border: 3px solid var(--ink);
+}
+.tl-row.field::before  { background: var(--live); }
+.tl-row.office::before { background: var(--sand-dim); }
+.tl-row.win::before    { background: var(--offline); }
+
+.tl-time { font-size: 12.5px; color: var(--sand-dim); }
+.tl-what { font-size: 15px; font-weight: 600; margin-top: 3px; }
+.tl-note { font-size: 13px; color: var(--sand-dim); margin-top: 4px; line-height: 1.65; }
+
+/* THE VERDICT. Plain Arabic. This is the sentence that decides whether he
+   trusts the system or fights it. */
+.verdict {
+  margin-top: 18px;
+  padding: 15px 17px;
+  background: var(--ink-2);
+  border: 1px solid var(--ink-3);
+  border-radius: 11px;
+  font-size: 14px; line-height: 1.8;
+}
+.verdict b { color: var(--live); font-weight: 600; }
+
+.verdict-why {
+  margin-top: 11px; padding-top: 11px;
+  border-top: 1px solid var(--ink-3);
+  font-size: 13px; color: var(--sand-dim); line-height: 1.75;
+}
+
+/* ---- the "needs you" card — the only place red is allowed ---- */
+.needs-you {
+  background: rgba(229,72,77,.06);
+  border: 1px solid rgba(229,72,77,.3);
+  border-radius: 14px;
+  padding: 18px 20px;
+}
+.ny-title { font-size: 15px; font-weight: 600; color: #FF8A8D; }
+.ny-body { font-size: 13.5px; color: var(--sand-dim); margin-top: 7px; line-height: 1.7; }
+.ny-acts { margin-top: 15px; display: flex; gap: 9px; }
+.ny-acts button {
+  flex: 1; min-height: 44px;
+  border-radius: 9px; border: 1px solid var(--ink-3);
+  background: var(--ink-2); color: var(--sand);
+  font-family: inherit; font-size: 14px; font-weight: 600;
+  cursor: pointer;
+}
+.ny-acts button:hover { border-color: var(--sand-dim); }
+.ny-acts button.primary { background: var(--sand); color: var(--ink); border-color: var(--sand); }
+
+.empty {
+  padding: 26px; text-align: center;
+  font-size: 13.5px; color: var(--sand-dim);
+  border: 1px dashed var(--ink-3); border-radius: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+@media (max-width: 700px) {
+  .driver { grid-template-columns: auto 1fr; }
+  .d-cash, .d-pending { grid-column: 2; text-align: right; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">سند<span>.</span></div>
+  <div class="today" id="todayLine">الثلاثاء ١٤ تموز — ٣ سائقين في الخدمة</div>
+</header>
+
+<div class="wrap">
+
+  <!-- ═══ 1. THE MONEY. He looks here first, so it goes here. ═══ -->
+  <div class="stats">
+    <div class="stat money">
+      <div class="stat-label">الأموال لدى السائقين</div>
+      <div class="stat-val num" id="statMoney">٣٧٬٠٠٠ د.ع</div>
+      <div class="stat-note">محصلة ولم تصل إلى المكتب بعد</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">تسليمات اليوم</div>
+      <div class="stat-val num" id="statDeliveries">١٢</div>
+      <div class="stat-note" id="statDeliveriesNote">من أصل ١٥ طلب</div>
+    </div>
+
+    <div class="stat dark">
+      <div class="stat-label">سائق منقطع عن الإنترنت</div>
+      <div class="stat-val num" id="statDark">١</div>
+      <!-- The reassurance is IN the stat. Being dark is not a problem, and the
+           card says so — otherwise he panics every afternoon. -->
+      <div class="stat-note">عمله محفوظ — سيصل بمجرد عودة الإنترنت</div>
+    </div>
+
+    <div class="stat needs">
+      <div class="stat-label">يحتاج إلى قرارك</div>
+      <div class="stat-val num" id="statNeeds">١</div>
+      <div class="stat-note">لم يستطع النظام أن يقرر بمفرده</div>
+    </div>
+  </div>
+
+  <!-- ═══ 2. DRIVERS ═══ -->
+  <h2><b>السائقون</b> — أين وصلوا</h2>
+
+  <div class="drivers" id="driversList">
+    <div class="driver is-dark">
+      <div class="dot"></div>
+      <div>
+        <div class="d-name">علي حسين</div>
+        <div class="d-sub">أبو غريب — آخر اتصال قبل ساعتين و٥٨ دقيقة</div>
+      </div>
+      <div class="d-pending">
+        <div class="d-pending-val num">٤</div>
+        <div class="d-pending-lbl">محفوظ لديه</div>
+      </div>
+      <div class="d-cash">
+        <div class="d-cash-val num">٢٥٬٠٠٠</div>
+        <div class="d-cash-lbl">د.ع لديه</div>
+      </div>
+    </div>
+
+    <div class="driver">
+      <div class="dot"></div>
+      <div>
+        <div class="d-name">عمر جاسم</div>
+        <div class="d-sub">الكرادة — متصل الآن</div>
+      </div>
+      <div class="d-pending none">
+        <div class="d-pending-val num">٠</div>
+        <div class="d-pending-lbl">محفوظ لديه</div>
+      </div>
+      <div class="d-cash">
+        <div class="d-cash-val num">١٢٬٠٠٠</div>
+        <div class="d-cash-lbl">د.ع لديه</div>
+      </div>
+    </div>
+
+    <div class="driver">
+      <div class="dot"></div>
+      <div>
+        <div class="d-name">مصطفى كريم</div>
+        <div class="d-sub">المنصور — متصل الآن</div>
+      </div>
+      <div class="d-pending none">
+        <div class="d-pending-val num">٠</div>
+        <div class="d-pending-lbl">محفوظ لديه</div>
+      </div>
+      <div class="d-cash">
+        <div class="d-cash-val num">٠</div>
+        <div class="d-cash-lbl">د.ع لديه</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ 3. THE CONFLICT. The hardest thing to explain, and the reason the
+             whole system exists. ═══ -->
+  <h2><b>حدث تعارض</b> — وحله النظام</h2>
+
+  <div class="conflict">
+    <div class="c-head">
+      <span class="c-badge">تم حله تلقائيا</span>
+      <span class="c-ref">JOB-1001 · أم أحمد · أبو غريب</span>
+    </div>
+
+    <!-- The timeline IS the argument. Once he sees 2:02 sitting above 2:30, the
+         answer is obvious and no explanation is needed. -->
+    <div class="tl">
+      <div class="tl-row field">
+        <div class="tl-time num">٢:٠٢ ظهرا</div>
+        <div class="tl-what">علي سلم الطلب لأم أحمد</div>
+        <div class="tl-note">كان منقطعا عن الإنترنت، فحفظ الطلب في هاتفه.</div>
+      </div>
+
+      <div class="tl-row office">
+        <div class="tl-time num">٢:٣٠ ظهرا</div>
+        <div class="tl-what">حول المكتب الطلب إلى عمر</div>
+        <div class="tl-note">لم يصلهم خبر من علي، فظنوا أنه معطل — وكان قرارا منطقيا بالنسبة لهم في ذلك الوقت.</div>
+      </div>
+
+      <div class="tl-row win">
+        <div class="tl-time num">٥:٠٠ عصرا</div>
+        <div class="tl-what">عاد الاتصال بالإنترنت لدى علي — فوصلنا التسليم</div>
+        <div class="tl-note">وصل متأخرا بساعتين و٥٨ دقيقة، لكنه حدث فعلا الساعة ٢:٠٢.</div>
+      </div>
+    </div>
+
+    <!-- THE VERDICT. This paragraph is the product.
+         It is not a log line. It is an argument, made to a man who is about to
+         decide whether to trust the machine. -->
+    <div class="verdict">
+      <b>التسليم مؤكد.</b> وصل الطلب إلى يد الزبونة الساعة ٢:٠٢ — وهذا أمر حدث بالفعل في الواقع.
+      وألغي التحويل الذي أجراه المكتب الساعة ٢:٣٠، ولن يذهب عمر إلى العنوان نفسه.
+
+      <div class="verdict-why">
+        <b style="color:var(--sand)">لماذا قرر النظام هكذا؟</b><br>
+        لأن ما <b style="color:var(--sand)">حدث في الواقع</b> أقوى مما <b style="color:var(--sand)">تقرر في المكتب</b>.
+        لقد تم تسليم الطلب — ولا يمكن إلغاؤه بقرار صدر بعده بنصف ساعة.
+        هذه هي القاعدة الوحيدة التي يعمل بها النظام، وهي نفسها في كل الحالات.
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ 4. THE ONE THING THAT ACTUALLY NEEDS HIM ═══ -->
+  <div id="needsSection">
+  <h2><b>يحتاج إلى قرارك</b> — لم يقرر النظام بمفرده</h2>
+
+  <div class="needs-you">
+    <div class="ny-title">سائقان يقولان إنهما سلما نفس الطلب</div>
+    <div class="ny-body">
+      علي وعمر سجلا تسليم JOB-1007 لنفس الزبون.
+      <br><br>
+      <!-- The system is HONEST about its own limits. It did not guess, and it
+           says so plainly. That honesty is what makes the AUTOMATIC decisions
+           above believable — if it guessed here, why would he trust it there? -->
+      هذا ليس خطأ في البرنامج — هذا أمر حدث في الواقع، ويجب أن يعرف أحدكم ماذا حدث.
+      لم يغير النظام شيئا ولم يقرر شيئا، لأنه لا يعرف. يجب أن تسأل.
+    </div>
+    <div class="ny-acts">
+      <button class="primary">اتصل بعلي</button>
+      <button>اتصل بعمر</button>
+      <button>عرض التفاصيل</button>
+    </div>
+  </div>
+  </div>
+
+</div>
+
+<script>
+  /* ============================================================================
+     LIVE MODE — same contract as web/driver/index.html.
+
+     DEMO MODE (default): the numbers above are static — this is what you show
+     someone with no backend running. If a real Sanad API answers at BACKEND,
+     the language-agnostic parts (money, counts, driver names/connectivity) are
+     replaced with real data pulled from the same demo org the driver app
+     seeds. Falls back to the static demo silently if the backend is
+     unreachable, so this file always works standalone.
+
+     What is deliberately NOT overwritten: the Arabic conflict narrative and
+     its "why" explanation. The production resolver's reason strings are
+     English (see src/controllers/demoController.js) — written for an
+     engineer reading a trace, not for Abu Karrar. Piping them in here would
+     undo the entire point of this screen, documented at the top of this
+     file. So the conflict card stays hand-written Arabic; only the stats and
+     driver roster — genuinely just data — come from the live API.
+  ============================================================================ */
+  const BACKEND = "http://localhost:4000"; // ← same backend as web/driver/index.html
+
+  // Arabic-Indic digits AND the Arabic thousands separator (٬, U+066C) — the
+  // static markup on this page already uses "٣٧٬٠٠٠", not "٣٧,٠٠٠", so live
+  // numbers have to match or they visibly clash next to it.
+  const ar = (n) => String(n).replace(/,/g, "٬").replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);
+  const money = (n) => ar(Number(n).toLocaleString("en-US")) + " د.ع";
+
+  async function connectLive() {
+    if (!BACKEND) return;
+    try {
+      const sessionRes = await fetch(`${BACKEND}/demo/session`, { method: "POST" });
+      if (!sessionRes.ok) throw new Error(`session ${sessionRes.status}`);
+      const sessionBody = await sessionRes.json();
+      const auth = { Authorization: `Bearer ${sessionBody.data.dispatcher.access_token}` };
+
+      const [devicesRes, cashRes, boardRes, conflictsRes] = await Promise.all([
+        fetch(`${BACKEND}/api/v1/dispatch/devices`, { headers: auth }),
+        fetch(`${BACKEND}/api/v1/reports/cash`, { headers: auth }),
+        fetch(`${BACKEND}/api/v1/dispatch/board?limit=100`, { headers: auth }),
+        fetch(`${BACKEND}/api/v1/dispatch/conflicts`, { headers: auth }),
+      ]);
+      if (![devicesRes, cashRes, boardRes, conflictsRes].every((r) => r.ok)) {
+        throw new Error("one or more dispatch endpoints failed");
+      }
+
+      const devices = (await devicesRes.json()).data.devices;
+      const cash = (await cashRes.json()).data;
+      const jobs = (await boardRes.json()).data;
+      const escalations = (await conflictsRes.json()).data.items;
+
+      renderLive({ devices, cash, jobs, escalations });
+    } catch (e) {
+      console.warn("Live backend not reachable — showing static demo:", e.message);
+    }
+  }
+
+  function renderLive({ devices, cash, jobs, escalations }) {
+    // The roster must be every DRIVER, not every device. /dispatch/devices
+    // only returns users who have at least one registered phone — in the demo
+    // seed that's Ali alone; Omar has no device row yet and would silently
+    // vanish from the board. /reports/cash selects straight from `users` for
+    // role IN ('driver','salesman'), so it is the complete list; devices only
+    // adds connectivity on top of it, for whoever actually has one.
+    const deviceByUser = Object.fromEntries(devices.map((d) => [d.user_id, d]));
+    const drivers = cash.rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      device: deviceByUser[r.id] || null,
+      outstanding: r.outstanding,
+    }));
+
+    document.getElementById("todayLine").textContent =
+      `اليوم — ${ar(drivers.length)} سائقين في الخدمة`;
+
+    document.getElementById("statMoney").textContent = money(cash.total_outstanding);
+
+    const delivered = jobs.filter((j) => j.status === "delivered").length;
+    document.getElementById("statDeliveries").textContent = ar(delivered);
+    document.getElementById("statDeliveriesNote").textContent =
+      `من أصل ${ar(jobs.length)} طلب`;
+
+    const isDark = (d) => d && (d.health === "dark" || d.health === "long_dark");
+    document.getElementById("statDark").textContent = ar(drivers.filter((r) => isDark(r.device)).length);
+    document.getElementById("statNeeds").textContent = ar(escalations.length);
+
+    document.getElementById("driversList").innerHTML = drivers
+      .map((r) => {
+        const dark = isDark(r.device);
+        const lastSeen = !r.device
+          ? "لم ينزل التطبيق بعد"
+          : r.device.dark_seconds == null
+            ? "لم يتصل بعد"
+            : dark
+              ? `آخر اتصال قبل ${ar(Math.round(r.device.dark_seconds / 60))} دقيقة`
+              : "متصل الآن";
+
+        return `
+      <div class="driver ${dark ? "is-dark" : ""}">
+        <div class="dot"></div>
+        <div>
+          <div class="d-name">${r.name}</div>
+          <div class="d-sub">${lastSeen}</div>
+        </div>
+        <div class="d-pending none">
+          <div class="d-pending-val num">٠</div>
+          <div class="d-pending-lbl">محفوظ لديه</div>
+        </div>
+        <div class="d-cash">
+          <div class="d-cash-val num">${ar(Number(r.outstanding).toLocaleString("en-US"))}</div>
+          <div class="d-cash-lbl">د.ع لديه</div>
+        </div>
+      </div>`;
+      })
+      .join("");
+
+    // A fresh demo session has no genuine human-escalated conflicts yet — do
+    // not show a fabricated one next to real numbers.
+    document.getElementById("needsSection").style.display = escalations.length ? "" : "none";
+  }
+
+  connectLive();
+</script>
+</body>
+</html>

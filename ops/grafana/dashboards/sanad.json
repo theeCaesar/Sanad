@@ -1,0 +1,248 @@
+{
+  "title": "Sanad — Field Operations",
+  "uid": "sanad-main",
+  "tags": ["sanad", "sync"],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": { "from": "now-6h", "to": "now" },
+  "description": "The panels are ordered by what you would actually look at during an incident. Dark time first, because it is the number nobody else has and the one that explains everything else.",
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "DARK TIME — the gap between the world and the database",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Dark time (p50 / p95 / p99)",
+      "description": "The seconds between a driver DOING something and the server HEARING about it.\n\nThis exists only because every mutation stores both `client_ts` (when it happened) and `received_at` (when it arrived). A normal API throws the first one away, because it assumes the two are the same moment.\n\nA p95 of six hours is not a bug — it is Tuesday in Abu Ghraib. But if the p50 jumps from 4 minutes to 40, something changed IN THE FIELD: a dead cell tower, a bad app release, a driver whose phone is off. That is a fact about the physical world, derived from database timestamps.",
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "lineWidth": 2, "fillOpacity": 8 } }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(sync_dark_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50 — the typical driver"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(sync_dark_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95 — the honest number"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(sync_dark_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99 — the coverage holes"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Longest dark period right now",
+      "description": "The driver we have not heard from in the longest time.\n\nHe might be in a coverage hole. Or he might have gone home with twelve unsynced deliveries on his phone. The system cannot tell the difference — but it can TELL YOU that it cannot tell, which beats a dashboard that quietly shows everything as fine.",
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 3600 },
+              { "color": "orange", "value": 14400 },
+              { "color": "red", "value": 28800 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "max(sync_dark_seconds)", "legendFormat": "worst" }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "SYNC — the write path",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 10 }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Sync batch latency",
+      "description": "THE DEATH SPIRAL STARTS HERE.\n\npg pool exhausts → requests queue → latency climbs → devices TIME OUT → devices RETRY → MORE LOAD → back to the top, but worse.\n\nWatch for the hockey-stick. That inflection IS the breaking point, and it is the number the k6 reconnect-storm test exists to find before production does.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 11 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 3000 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(sync_batch_duration_ms_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(sync_batch_duration_ms_bucket[5m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Batch size — the LEADING indicator",
+      "description": "Batches getting bigger means devices are coming back from long dark periods — which means THE RECONNECT STORM IS STARTING RIGHT NOW.\n\nThis is why the HPA scales on this metric and not on CPU. CPU is a LAGGING indicator: by the time it hits 80%, the storm has already arrived, the pool is already saturating, and drivers are already timing out. Scaling on CPU means always arriving late to your own emergency.\n\nThis is what observability is actually for. Not dashboards to admire — SIGNALS YOU ACT ON.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 11 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(sync_batch_size_bucket[5m])) by (le))",
+          "legendFormat": "p95 mutations per batch"
+        },
+        {
+          "expr": "sum(rate(sync_batch_size_count[1m])) * 60",
+          "legendFormat": "batches/min"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "piechart",
+      "title": "Conflicts, by resolution",
+      "description": "field_wins  — a physical event beat an office edit. The core rule, working.\nserver_wins — the office was right.\nmerged      — they never actually disagreed. This should be the BIGGEST slice.\nescalated   — the system refused to guess and asked a human.\n\nA RISING escalation rate is the system telling you, honestly, that reality contains a case your rules do not cover. That is a FEATURE.\n\nThe failure mode to fear is an escalation rate of ZERO, achieved by guessing.",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 19 },
+      "targets": [
+        {
+          "expr": "sum(increase(sync_conflicts_total[1h])) by (resolution)",
+          "legendFormat": "{{resolution}}"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Duplicates absorbed",
+      "description": "Mutations rejected as already-seen.\n\nA HIGH number here is GOOD NEWS, not bad. It means the network is flaky (which it is — that is the whole premise) and the idempotency layer is doing exactly its job: absorbing retries instead of double-delivering and double-counting cash.\n\nIf this ever hits zero during a storm, be suspicious. It means retries are not happening, which means devices are DROPPING work instead of retrying it.",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 19 },
+      "targets": [
+        {
+          "expr": "sum(rate(sync_duplicates_total[5m])) * 60",
+          "legendFormat": "duplicates/min (this is healthy)"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Sync failures — the one that matters",
+      "description": "NOT latency. FAILURE.\n\nA failed sync means a driver's day of work is still trapped on his phone. He will retry — but if the failure is persistent, those deliveries are INVISIBLE TO THE BUSINESS until he gives up and phones the office.\n\nThis is the metric the canary deploy gates on. A slow deploy is an annoyance. A deploy that silently rejects field work is an incident you hear about from a customer, not a dashboard.",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 19 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.01 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(sync_errors_total[5m])) / clamp_min(sum(rate(sync_batch_size_count[5m])), 1)",
+          "legendFormat": "failure rate"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "row",
+      "title": "OUTBOX — the silent failure",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 }
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Outbox lag — the nastiest failure mode there is",
+      "description": "Events written but not yet published to Kafka.\n\nTHIS IS THE FAILURE MODE THAT IS INVISIBLE WITHOUT OBSERVABILITY.\n\nIf this climbs: state changes are landing fine. The API is returning 200s. Drivers are happy. The dashboard is green.\n\nAnd every downstream consumer — notifications, analytics, inventory — is SILENTLY GOING STALE. Customers are not being told their parcels arrived. Nobody notices for hours.\n\nThe API is lying to you by being fine.\n\nNothing is LOST — the events are safe in Postgres, and the outbox pattern is exactly what turns a Kafka outage into a delay instead of a data-loss event. But 'not lost' is not 'delivered'.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "red", "value": 60 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "outbox_pending", "legendFormat": "pending events" },
+        { "expr": "outbox_oldest_pending_seconds", "legendFormat": "age of oldest (s)" }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Dead-lettered events",
+      "description": "Events that exhausted their retries and will NEVER be delivered.\n\nThis should be ZERO. If it is not, page someone — a dead-lettered event is data we promised to deliver and did not, and it is sitting in a DLQ waiting for a human.",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 28 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "sum(increase(outbox_dead_lettered_total[24h]))", "legendFormat": "24h" }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "Sagas compensated",
+      "description": "Sagas that failed mid-flight and rolled back.\n\nA NON-ZERO number here is NORMAL and it means THE DESIGN IS WORKING. A payment gateway timed out, and the system correctly undid the order and put the stock back in the van.\n\nWhat you watch for is `saga_state = failed` — which means the COMPENSATION ITSELF failed. Money moved and could not be moved back. There is no clever code that fixes that; a human must look.",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 28 },
+      "targets": [
+        { "expr": "sum(increase(saga_compensated_total[24h])) by (failed_step)", "legendFormat": "{{failed_step}}" }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "row",
+      "title": "BUSINESS",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 }
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Deliveries",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 37 },
+      "targets": [
+        { "expr": "sum(rate(jobs_delivered_total[15m])) * 900", "legendFormat": "per 15min" }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "Cash outstanding",
+      "description": "Collected by drivers, not yet remitted.\n\nCorrect BY CONSTRUCTION: cash_entries is append-only and mutation_id is UNIQUE. A driver who syncs the same batch twice on a bad network physically cannot double-count a collection — the database refuses the second insert.\n\nIf this number ever looks wrong, the discrepancy is OPERATIONAL, not technical. Go and look at the audit trail.",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 37 },
+      "fieldConfig": { "defaults": { "unit": "currencyIQD" } },
+      "targets": [
+        { "expr": "cash_outstanding_iqd", "legendFormat": "IQD" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sanad-prune
+  namespace: sanad
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: prune
+              image: postgres:16-alpine
+              command: ['sh', '-c', 'psql "$DATABASE_URL" -f /scripts/prune.sql']
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef: { name: sanad-secrets, key: database-url }
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+          volumes:
+            - name: scripts
+              configMap: { name: sanad-scripts }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sanad-saga-recovery
+  namespace: sanad
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: recover
+              image: ghcr.io/mohammed/sanad:latest
+              command: ['node', '-e', 'require("./src/workers/sagaRecovery").run()']
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef: { name: sanad-secrets, key: database-url }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sanad-outbox
+  namespace: sanad
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: sanad-outbox }
+  template:
+    metadata:
+      labels: { app: sanad-outbox }
+    spec:
+      nodeSelector: { workload: worker }
+      tolerations:
+        - key: workload
+          value: worker
+          effect: NoSchedule
+      containers:
+        - name: worker
+          image: ghcr.io/mohammed/sanad:latest
+          command: ['node', 'src/workers/outboxPublisher.js']
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: sanad-secrets, key: database-url }
+            - name: KAFKA_BROKERS
+              valueFrom:
+                configMapKeyRef: { name: sanad-config, key: kafka-brokers }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+      terminationGracePeriodSeconds: 30

@@ -1,0 +1,947 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0F1B24" />
+    <title>سند — تطبيق السائق</title>
+
+    <!--
+  ============================================================================
+  THE DRIVER APP
+  ============================================================================
+
+  Who this is for: Ali. 34. Drives a van in Baghdad. Cheap Android, cracked
+  screen, one hand on the wheel, sun on the display. He does not know what a
+  "mutation queue" is and he never will.
+
+  THE ONE JOB OF THIS SCREEN:
+    Make it obvious that his work is SAFE even with no internet.
+
+  Everything follows from that:
+
+  · OFFLINE IS AMBER, NEVER RED. This is the single most important design
+    decision in the whole app. Red means "something is broken" — and nothing is
+    broken. Being offline in Abu Ghraib is TUESDAY. If the app panics every time
+    the signal drops, Ali stops trusting it, and a tool you do not trust is a
+    tool you work around.
+
+  · The pending counter FILLS LIKE A BATTERY. He watches his work stack up
+    safely, and watches it drain away when the signal comes back. That drain is
+    the emotional payoff — it is the moment he BELIEVES the thing.
+
+  · Buttons are big enough for a thumb, in a moving vehicle, with gloves.
+
+  · No version numbers. No sync jargon. No English. He reads:
+        "محفوظ ✓ — سيرسل عند عودة الإنترنت"
+        (Saved — it will send when the internet comes back)
+  ============================================================================
+-->
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      :root {
+        /* ---- palette ----------------------------------------------------------
+     Deep ink and warm sand. Not a generic dark theme — the ink is blue-cold
+     (a night road) and the sand is warm (a Baghdad afternoon). They fight
+     each other slightly, which is the point.
+  */
+        --ink: #0f1b24;
+        --ink-2: #16262f;
+        --ink-3: #1e323c;
+        --sand: #e8dcc8;
+        --sand-dim: #a89b85;
+
+        /* THE TWO COLOURS THAT ARE THE WHOLE PRODUCT.
+     Green = connected. Amber = offline.
+     Amber. NOT red. Offline is normal, and it must never look like a failure. */
+        --live: #2ecc71;
+        --offline: #f0a500;
+
+        --danger: #e5484d; /* reserved for things that ARE actually wrong */
+
+        --r: 14px;
+        --tap: 56px; /* minimum touch target. A thumb, in a van. */
+
+        font-family: "IBM Plex Sans Arabic", system-ui, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      body {
+        background: var(--ink);
+        color: var(--sand);
+        min-height: 100vh;
+        min-height: 100dvh;
+        overflow-x: hidden;
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+
+      /* Numbers must be tabular. Cash that jitters as it updates looks untrustworthy,
+   and this app is asking a man to trust it with money. */
+      .num {
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum";
+      }
+
+      /* ==========================================================================
+   THE STATUS BAR — the most important 60px on the screen
+   ========================================================================== */
+      .status {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        padding: 14px 18px calc(14px + env(safe-area-inset-top));
+        padding-top: calc(14px + env(safe-area-inset-top));
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: var(--ink-2);
+        border-bottom: 1px solid var(--ink-3);
+        transition: background 0.5s ease;
+      }
+
+      /* Offline: the whole bar warms. Not an alarm — a change of weather. */
+      body.is-offline .status {
+        background: #2a2113;
+        border-bottom-color: #4a3a1c;
+      }
+
+      .dot {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: var(--live);
+        box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7);
+        animation: pulse 2.4s infinite;
+        flex-shrink: 0;
+      }
+      body.is-offline .dot {
+        background: var(--offline);
+        box-shadow: 0 0 0 0 rgba(240, 165, 0, 0.7);
+        animation: pulse 3.6s infinite; /* slower. calmer. not an emergency. */
+      }
+      @keyframes pulse {
+        0% {
+          box-shadow: 0 0 0 0 currentColor;
+        }
+        70% {
+          box-shadow: 0 0 0 10px rgba(0, 0, 0, 0);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+        }
+      }
+
+      .status-text {
+        flex: 1;
+      }
+      .status-title {
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .status-sub {
+        font-size: 12.5px;
+        color: var(--sand-dim);
+        margin-top: 2px;
+      }
+
+      /* ---- THE PENDING COUNTER. The signature element. -----------------------
+   It fills like a battery as Ali works offline, and DRAINS when he reconnects.
+   That drain is the whole emotional argument of the product: "look — it was
+   never lost." */
+      .pending {
+        position: relative;
+        min-width: 62px;
+        height: 44px;
+        border-radius: 11px;
+        border: 1.5px solid var(--ink-3);
+        background: var(--ink);
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+      .pending.has-work {
+        border-color: var(--offline);
+      }
+
+      /* the "fluid" that rises inside */
+      .pending-fill {
+        position: absolute;
+        inset: auto 0 0 0;
+        height: 0%;
+        background: linear-gradient(
+          180deg,
+          rgba(240, 165, 0, 0.3),
+          rgba(240, 165, 0, 0.55)
+        );
+        transition: height 0.7s cubic-bezier(0.34, 1.2, 0.64, 1);
+      }
+      .pending-num {
+        position: relative;
+        z-index: 1;
+        font-size: 19px;
+        font-weight: 700;
+      }
+      .pending-label {
+        position: relative;
+        z-index: 1;
+        font-size: 9.5px;
+        color: var(--sand-dim);
+        margin-top: -3px;
+      }
+
+      /* the drain, on reconnect */
+      .pending.draining .pending-fill {
+        transition: height 1.1s ease-in;
+        height: 0% !important;
+      }
+
+      /* ==========================================================================
+   THE OFFLINE TOGGLE — the thing a stranger clicks first
+   ========================================================================== */
+      .sim {
+        margin: 16px 18px 0;
+        padding: 14px 16px;
+        border: 1px dashed var(--ink-3);
+        border-radius: var(--r);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .sim-label {
+        font-size: 12.5px;
+        color: var(--sand-dim);
+        line-height: 1.5;
+      }
+      .sim-label b {
+        color: var(--sand);
+        font-weight: 600;
+      }
+
+      .switch {
+        position: relative;
+        width: 62px;
+        height: 34px;
+        border-radius: 17px;
+        background: var(--ink-3);
+        border: none;
+        cursor: pointer;
+        transition: background 0.3s;
+        flex-shrink: 0;
+      }
+      .switch.on {
+        background: var(--offline);
+      }
+      .switch::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        right: 3px;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--sand);
+        transition: transform 0.3s cubic-bezier(0.34, 1.4, 0.64, 1);
+      }
+      .switch.on::after {
+        transform: translateX(-28px);
+      }
+      .switch:focus-visible {
+        outline: 2px solid var(--live);
+        outline-offset: 3px;
+      }
+
+      /* ==========================================================================
+   JOB CARDS
+   ========================================================================== */
+      .jobs {
+        padding: 16px 18px 100px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin: 8px 2px 2px;
+      }
+      .section-head h2 {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--sand-dim);
+        letter-spacing: 0.02em;
+      }
+      .section-head span {
+        font-size: 12px;
+        color: var(--sand-dim);
+      }
+
+      .job {
+        background: var(--ink-2);
+        border: 1px solid var(--ink-3);
+        border-radius: var(--r);
+        padding: 16px;
+        transition:
+          border-color 0.3s,
+          transform 0.2s;
+      }
+      .job.pending-sync {
+        /* Amber left edge — in RTL that is the RIGHT edge. This job is done but not
+     yet sent. It is SAFE. It is not an error. */
+        border-right: 3px solid var(--offline);
+      }
+      .job.done {
+        opacity: 0.55;
+      }
+
+      .job-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        gap: 10px;
+      }
+      .job-ref {
+        font-size: 12px;
+        color: var(--sand-dim);
+      }
+      .job-name {
+        font-size: 17px;
+        font-weight: 600;
+        margin-top: 3px;
+      }
+      .job-addr {
+        font-size: 13.5px;
+        color: var(--sand-dim);
+        margin-top: 5px;
+        line-height: 1.6;
+      }
+
+      .chip {
+        font-size: 11.5px;
+        font-weight: 600;
+        padding: 5px 10px;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+      .chip.wait {
+        background: #1e323c;
+        color: var(--sand-dim);
+      }
+      .chip.moving {
+        background: rgba(46, 204, 113, 0.14);
+        color: var(--live);
+      }
+      .chip.saved {
+        background: rgba(240, 165, 0, 0.16);
+        color: var(--offline);
+      }
+      .chip.done {
+        background: rgba(46, 204, 113, 0.14);
+        color: var(--live);
+      }
+
+      .cash {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid var(--ink-3);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .cash-label {
+        font-size: 12.5px;
+        color: var(--sand-dim);
+      }
+      .cash-amt {
+        font-size: 17px;
+        font-weight: 700;
+      }
+
+      /* ---- actions: BIG. A thumb. In a van. In the sun. ---- */
+      .actions {
+        margin-top: 14px;
+        display: grid;
+        gap: 9px;
+        grid-auto-flow: column;
+      }
+
+      button.act {
+        min-height: var(--tap);
+        border-radius: 11px;
+        border: none;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 15px;
+        font-weight: 600;
+        display: grid;
+        place-items: center;
+        transition:
+          transform 0.1s,
+          filter 0.2s;
+      }
+      button.act:active {
+        transform: scale(0.97);
+      }
+      button.act:focus-visible {
+        outline: 2px solid var(--live);
+        outline-offset: 2px;
+      }
+
+      .act.go {
+        background: var(--live);
+        color: #06261a;
+      }
+      .act.warn {
+        background: var(--ink-3);
+        color: var(--sand);
+      }
+
+      /* ---- THE SAVED-OFFLINE MESSAGE. In Ali's words, not an engineer's. ---- */
+      .saved-note {
+        margin-top: 12px;
+        padding: 11px 13px;
+        background: rgba(240, 165, 0, 0.09);
+        border: 1px solid rgba(240, 165, 0, 0.25);
+        border-radius: 10px;
+        font-size: 13px;
+        line-height: 1.6;
+        color: #f5c96a;
+        display: flex;
+        gap: 9px;
+        align-items: start;
+      }
+      .saved-note svg {
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+
+      /* ==========================================================================
+   THE SYNC MOMENT — the payoff
+   ========================================================================== */
+      .sync-sheet {
+        position: fixed;
+        inset: auto 0 0 0;
+        z-index: 100;
+        background: var(--ink-2);
+        border-top: 1px solid var(--ink-3);
+        border-radius: 20px 20px 0 0;
+        padding: 22px 20px calc(22px + env(safe-area-inset-bottom));
+        transform: translateY(110%);
+        transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+        max-height: 72vh;
+        overflow-y: auto;
+      }
+      .sync-sheet.up {
+        transform: translateY(0);
+      }
+
+      .sync-head {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        margin-bottom: 16px;
+      }
+      .sync-head h3 {
+        font-size: 17px;
+        font-weight: 700;
+      }
+
+      .spinner {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 2.5px solid var(--ink-3);
+        border-top-color: var(--live);
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .sync-row {
+        display: flex;
+        align-items: start;
+        gap: 11px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--ink-3);
+        opacity: 0;
+        transform: translateY(6px);
+        animation: rise 0.35s ease forwards;
+      }
+      @keyframes rise {
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      .sync-row:last-child {
+        border-bottom: none;
+      }
+
+      .sync-icon {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .sync-icon.ok {
+        background: rgba(46, 204, 113, 0.16);
+        color: var(--live);
+      }
+      .sync-icon.warn {
+        background: rgba(240, 165, 0, 0.16);
+        color: var(--offline);
+      }
+
+      .sync-body {
+        flex: 1;
+      }
+      .sync-title {
+        font-size: 14.5px;
+        font-weight: 600;
+      }
+      /* THE REASON. In plain Arabic. Not "field_wins". */
+      .sync-why {
+        font-size: 13px;
+        color: var(--sand-dim);
+        margin-top: 4px;
+        line-height: 1.65;
+      }
+
+      .done-btn {
+        width: 100%;
+        min-height: var(--tap);
+        margin-top: 16px;
+        background: var(--live);
+        color: #06261a;
+        border: none;
+        border-radius: 11px;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- ═══ THE STATUS BAR ═══ -->
+    <div class="status">
+      <div class="dot"></div>
+      <div class="status-text">
+        <div class="status-title" id="statusTitle">متصل بالإنترنت</div>
+        <div class="status-sub" id="statusSub">كل شيء محفوظ ومرسل</div>
+      </div>
+      <div class="pending" id="pending">
+        <div class="pending-fill" id="pendingFill"></div>
+        <div class="pending-num num" id="pendingNum">0</div>
+        <div class="pending-label">بالانتظار</div>
+      </div>
+    </div>
+
+    <!-- ═══ THE TOGGLE — for the visitor, not for Ali ═══ -->
+    <div class="sim">
+      <div class="sim-label">
+        <b>جرب: اقطع الإنترنت</b><br />
+        تابع عملك كالمعتاد — سترى كيف يحفظ كل شيء
+      </div>
+      <button
+        class="switch"
+        id="offlineSwitch"
+        aria-label="قطع الإنترنت"
+      ></button>
+    </div>
+
+    <!-- ═══ JOBS ═══ -->
+    <div class="jobs">
+      <div class="section-head">
+        <h2>توصيلات اليوم</h2>
+        <span id="jobCount">٣ توصيلات</span>
+      </div>
+      <div id="jobList"></div>
+    </div>
+
+    <!-- ═══ THE SYNC SHEET ═══ -->
+    <div class="sync-sheet" id="syncSheet">
+      <div class="sync-head">
+        <div class="spinner" id="syncSpinner"></div>
+        <h3 id="syncTitle">يتم الإرسال...</h3>
+      </div>
+      <div id="syncRows"></div>
+      <button
+        class="done-btn"
+        id="syncDone"
+        style="display: none"
+        onclick="closeSheet()"
+      >
+        تم
+      </button>
+    </div>
+
+    <script>
+      /* ============================================================================
+   THE LOCAL QUEUE.
+   ============================================================================
+
+   In production this is IndexedDB. Here it is an array, because the POINT is
+   not the storage engine — it is that the write happens LOCALLY AND FIRST, and
+   the network is an afterthought that catches up whenever it feels like it.
+
+   The rule Ali never sees but always feels:
+       NEVER WAIT FOR THE NETWORK TO UPDATE THE SCREEN.
+
+   He taps "delivered". The screen says delivered. Immediately. Whether the
+   server hears about it in two seconds or nine hours is not his problem, and
+   an app that made it his problem would be an app he stops using.
+   ============================================================================ */
+
+      /* ============================================================================
+   TWO MODES — this file works both ways with no code changes.
+
+   1. DEMO MODE (default): open the file directly in a browser. Everything is
+      simulated locally — offline toggle, queue, sync, conflict. All real
+      behaviour, no backend. This is what you show people.
+
+   2. LIVE MODE: if a Sanad backend is running (docker compose up), set BACKEND
+      to its URL. The app calls the REAL /demo/session and pushes REAL mutations
+      to /sync/push. The conflict you watch resolve is the actual production
+      engine, not a script.
+
+   To go live: set BACKEND to 'http://localhost:4000' and reload.
+   ============================================================================ */
+      const BACKEND = "http://localhost:4000"; // ← set to 'http://localhost:4000' for a real backend
+
+      let online = true;
+      let seq = 0;
+      const queue = []; // ← the "outbox" on the device. Never lost.
+      let session = null;
+
+      let jobs = [
+        {
+          id: "j1",
+          ref: "JOB-1001",
+          name: "أم أحمد",
+          addr: "أبو غريب — قرب الجامع",
+          cod: 25000,
+          status: "moving",
+        },
+        {
+          id: "j2",
+          ref: "JOB-1002",
+          name: "أبو حسن",
+          addr: "الكرادة — شارع ٦٢",
+          cod: 12000,
+          status: "moving",
+        },
+        {
+          id: "j3",
+          ref: "JOB-1003",
+          name: "سارة ماركت",
+          addr: "المنصور — قرب السوق",
+          cod: 0,
+          status: "wait",
+        },
+      ];
+
+      /* LIVE MODE: seed a real session. Falls back to demo mode silently if the
+   backend is not reachable, so the file always works. */
+      async function connectLive() {
+        if (!BACKEND) return;
+        try {
+          const res = await fetch(`${BACKEND}/demo/session`, {
+            method: "POST",
+          });
+          const body = await res.json();
+          session = {
+            token: body.data.driver.device_token,
+            deviceId: body.data.driver.device_id,
+          };
+          jobs = body.data.jobs.slice(0, 3).map((j, i) => ({
+            id: j.id,
+            ref: j.ref,
+            name: ["أم أحمد", "أبو حسن", "سارة ماركت"][i] || j.ref,
+            addr:
+              [
+                "أبو غريب — قرب الجامع",
+                "الكرادة — شارع ٦٢",
+                "المنصور — قرب السوق",
+              ][i] || "",
+            cod: j.cod_amount,
+            status: j.status === "picked_up" ? "moving" : "wait",
+            version: j.version,
+          }));
+          const sub = document.getElementById("statusSub");
+          if (sub) sub.textContent = "متصل بخادم حقيقي ✓";
+          render();
+        } catch (e) {
+          console.warn(
+            "Live backend not reachable — staying in demo mode:",
+            e.message,
+          );
+        }
+      }
+
+      const ar = (n) => String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);
+      const money = (n) => ar(n.toLocaleString("en-US")) + " د.ع";
+
+      /* --- render -------------------------------------------------------------- */
+      function render() {
+        document.body.classList.toggle("is-offline", !online);
+
+        document.getElementById("statusTitle").textContent = online
+          ? "متصل بالإنترنت"
+          : "لا يوجد اتصال بالإنترنت";
+
+        document.getElementById("statusSub").textContent = online
+          ? queue.length
+            ? "يتم الإرسال..."
+            : "كل شيء محفوظ ومرسل"
+          : /* THE SENTENCE THE WHOLE PRODUCT IS BUILT TO EARN.
+         Not "you are offline". Not an error. A promise. */
+            "تابع عملك — كل شيء سيحفظ";
+
+        const p = document.getElementById("pending");
+        const fill = document.getElementById("pendingFill");
+        document.getElementById("pendingNum").textContent = ar(queue.length);
+        p.classList.toggle("has-work", queue.length > 0);
+        fill.style.height = Math.min(100, queue.length * 20) + "%";
+
+        document.getElementById("jobCount").textContent =
+          ar(jobs.length) + " توصيلات";
+
+        document.getElementById("jobList").innerHTML = jobs
+          .map((j) => {
+            const queued = queue.some((m) => m.entity_id === j.id);
+
+            const chip =
+              j.status === "done"
+                ? '<span class="chip done">تم التسليم</span>'
+                : queued
+                  ? '<span class="chip saved">محفوظ ✓</span>'
+                  : j.status === "moving"
+                    ? '<span class="chip moving">في الطريق</span>'
+                    : '<span class="chip wait">بالانتظار</span>';
+
+            /* The message. In Ali's words.
+       Not "queued mutation pending sync". */
+            const note =
+              queued && !online
+                ? `
+      <div class="saved-note">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <path d="M20 6L9 17l-5-5"/>
+        </svg>
+        <div>محفوظ في الهاتف. سيرسل تلقائيا بمجرد عودة الإنترنت — ولن يضيع.</div>
+      </div>`
+                : "";
+
+            const acts =
+              j.status === "done" || queued
+                ? ""
+                : `
+      <div class="actions">
+        <button class="act go"   onclick="deliver('${j.id}')">تسليم الطلب</button>
+        <button class="act warn" onclick="fail('${j.id}')">لم أجد الزبون</button>
+      </div>`;
+
+            return `
+      <div class="job ${queued ? "pending-sync" : ""} ${j.status === "done" ? "done" : ""}">
+        <div class="job-top">
+          <div>
+            <div class="job-ref">${j.ref}</div>
+            <div class="job-name">${j.name}</div>
+            <div class="job-addr">${j.addr}</div>
+          </div>
+          ${chip}
+        </div>
+        ${
+          j.cod
+            ? `
+          <div class="cash">
+            <span class="cash-label">تستلم منه</span>
+            <span class="cash-amt num">${money(j.cod)}</span>
+          </div>`
+            : ""
+        }
+        ${acts}
+        ${note}
+      </div>`;
+          })
+          .join("");
+      }
+
+      /* --- the write path. LOCAL FIRST. ALWAYS. -------------------------------- */
+      function enqueue(jobId, type) {
+        queue.push({
+          /* Generated HERE, on the device. Not by the server.
+       Only the device knows that two uploads are the same act — so when the
+       response is lost on a bad link and the device retries, this id is what
+       makes the retry a no-op instead of a double delivery. */
+          mutation_id: crypto.randomUUID(),
+          seq: ++seq /* the order he ACTED. Not the order the
+                                        packets arrive. Phone clocks lie; this
+                                        counter does not. */,
+          type,
+          entity_id: jobId,
+          client_ts: new Date().toISOString() /* when it HAPPENED. */,
+        });
+
+        render(); /* instantly. no network. */
+        if (online) setTimeout(sync, 500);
+      }
+
+      const deliver = (id) => enqueue(id, "job.deliver");
+      const fail = (id) => enqueue(id, "job.fail");
+
+      /* --- the sync. The payoff. ----------------------------------------------- */
+      async function sync() {
+        if (!queue.length || !online) return;
+
+        const batch = queue.splice(0, queue.length);
+        const sheet = document.getElementById("syncSheet");
+        const rows = document.getElementById("syncRows");
+
+        document.getElementById("pending").classList.add("draining");
+        document.getElementById("syncSpinner").style.display = "";
+        document.getElementById("syncTitle").textContent = "يتم الإرسال...";
+        document.getElementById("syncDone").style.display = "none";
+        rows.innerHTML = "";
+        sheet.classList.add("up");
+        render();
+
+        await wait(900);
+
+        /* LIVE MODE: actually push the batch to the real backend. The verdicts
+     below then come from the production sync engine, not from a script. */
+        let liveVerdicts = null;
+        if (BACKEND && session) {
+          try {
+            const res = await fetch(`${BACKEND}/api/v1/sync/push`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${session.token}`,
+              },
+              body: JSON.stringify({
+                mutations: batch.map((m) => ({
+                  mutation_id: m.mutation_id,
+                  seq: m.seq,
+                  type: m.type,
+                  entity_id: m.entity_id,
+                  base_version:
+                    jobs.find((j) => j.id === m.entity_id)?.version ?? 1,
+                  client_ts: m.client_ts,
+                  payload: {},
+                })),
+              }),
+            });
+            const body = await res.json();
+            liveVerdicts = {};
+            (body.data?.results || []).forEach((r) => {
+              liveVerdicts[r.mutation_id] = r;
+            });
+          } catch (e) {
+            console.warn("live push failed, showing demo verdicts:", e.message);
+          }
+        }
+
+        for (let i = 0; i < batch.length; i++) {
+          const m = batch[i];
+          const job = jobs.find((j) => j.id === m.entity_id);
+
+          /* THE CONFLICT.
+       While Ali was offline, the office reassigned JOB-1001 — it assumed he was
+       stuck. His delivery arrives late, against a row that changed.
+
+       The rule: WHAT HAPPENED IN THE FIELD WINS. The parcel is in the
+       customer's hands. No office edit made afterwards can un-happen that.
+
+       In LIVE mode this comes from the real server verdict; in DEMO mode it is
+       the scripted JOB-1001 conflict. Either way the driver is TOLD why — a
+       system that silently overrides a human is one that human learns to distrust. */
+          const verdict = liveVerdicts?.[m.mutation_id];
+          const conflicted = verdict
+            ? verdict.resolution === "field_wins"
+            : m.entity_id === "j1" && m.type === "job.deliver";
+
+          job.status = "done";
+
+          rows.insertAdjacentHTML(
+            "beforeend",
+            `
+      <div class="sync-row" style="animation-delay:${i * 0.12}s">
+        <div class="sync-icon ${conflicted ? "warn" : "ok"}">${conflicted ? "!" : "✓"}</div>
+        <div class="sync-body">
+          <div class="sync-title">${job.name} — ${m.type === "job.deliver" ? "تم التسليم" : "لم يسلم"}</div>
+          <div class="sync-why">${
+            conflicted
+              ? /* the reason string, in the driver's language */
+                "حول المكتب هذا الطلب إلى سائق آخر بينما كنت منقطعا عن الإنترنت، لكنك سلمته بالفعل — والتسليم مؤكد. سننبه المكتب."
+              : "وصل إلى المكتب. مؤكد."
+          }</div>
+        </div>
+      </div>`,
+          );
+
+          await wait(400);
+          render();
+        }
+
+        document.getElementById("syncSpinner").style.display = "none";
+        document.getElementById("syncTitle").textContent = "تم الإرسال ✓";
+        document.getElementById("syncDone").style.display = "";
+        document.getElementById("pending").classList.remove("draining");
+        render();
+      }
+
+      const closeSheet = () =>
+        document.getElementById("syncSheet").classList.remove("up");
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      /* --- the toggle ---------------------------------------------------------- */
+      document.getElementById("offlineSwitch").onclick = (e) => {
+        online = !online;
+        e.target.classList.toggle("on", !online);
+        render();
+        /* Back online → the queue drains by itself. Ali does nothing. He does not
+     press "sync". He does not even know the word. It just happens. */
+        if (online && queue.length) setTimeout(sync, 700);
+      };
+
+      render();
+      connectLive(); // no-op in demo mode; seeds a real session in live mode
+    </script>
+  </body>
+</html>

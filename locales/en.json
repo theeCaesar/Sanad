@@ -1,0 +1,28 @@
+{
+  "OK": "OK",
+  "UNAUTHORIZED": "You are not logged in.",
+  "TOKEN_EXPIRED": "Your session expired. Please sign in again.",
+  "FORBIDDEN": "You do not have permission to do that.",
+  "NOT_ASSIGNED_TO_YOU": "This item is not assigned to you.",
+  "DEVICE_REVOKED": "This device has been revoked. Contact your dispatcher.",
+  "RATE_LIMITED": "Too many requests. Please slow down.",
+  "VALIDATION_FAILED": "Some of the information you sent is not valid.",
+  "NOT_FOUND": "Not found.",
+
+  "SYNC_BATCH_TOO_LARGE": "Too many changes in one sync. Split into smaller batches.",
+  "SYNC_APPLIED": "Applied.",
+  "SYNC_DUPLICATE": "Already synced — no change.",
+  "SYNC_FIELD_WINS": "Your delivery was recorded. The office had reassigned this job while you were offline, but what happened in the field stands.",
+  "SYNC_SERVER_WINS": "This job was {{status}} by the office before your change arrived. Your change was not applied.",
+  "SYNC_MERGED": "Synced. The office changed other details while you were offline; both changes were kept.",
+  "SYNC_ESCALATED": "This needs a dispatcher to review — your change and the office's change conflict.",
+  "SYNC_ILLEGAL_TRANSITION": "You cannot move this job from {{from}} to {{to}}.",
+  "SYNC_INSUFFICIENT_STOCK": "Not enough stock in your van for this order.",
+
+  "JOB_ASSIGNED": "New job {{ref}} assigned to you.",
+  "JOB_DELIVERED": "Job {{ref}} delivered.",
+  "JOB_FAILED": "Job {{ref}} could not be delivered.",
+  "STOCK_LOW": "{{product}} is running low ({{remaining}} left).",
+  "CONFLICT_NEEDS_REVIEW": "Conflict on {{ref}} needs your review.",
+  "CASH_RECONCILE_DUE": "You have {{amount}} IQD to hand in."
+}

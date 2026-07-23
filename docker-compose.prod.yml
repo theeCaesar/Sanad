@@ -1,0 +1,189 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '3'
+
+services:
+  postgres:
+    ports: !override []
+    restart: unless-stopped
+    logging: *default-logging
+    command:
+      - postgres
+      - -c
+      - max_connections=100
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=768MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - wal_compression=on
+    deploy:
+      resources:
+        limits:
+          memory: 640M
+
+  redis:
+    ports: !override []
+    restart: unless-stopped
+    logging: *default-logging
+    # Persistence off deliberately: Redis only holds rate-limit counters and
+    # Socket.IO pub/sub here, nothing that needs to survive a restart, so
+    # RDB/AOF would only cost disk I/O for no benefit.
+    command: --maxmemory 128mb --maxmemory-policy allkeys-lru --save ""
+    deploy:
+      resources:
+        limits:
+          memory: 160M
+
+  kafka:
+    ports: !override []
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      KAFKA_HEAP_OPTS: '-Xmx512m -Xms256m'
+      KAFKA_CFG_LOG_RETENTION_HOURS: 72
+    deploy:
+      resources:
+        limits:
+          memory: 700M
+
+  migrate:
+    restart: 'no'
+    logging: *default-logging
+
+  api:
+    ports: !override []
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      NODE_ENV: production
+      PG_POOL_MAX: 30
+      # Required behind Caddy: without it every request appears to originate
+      # from Caddy's address and all clients share one rate-limit bucket.
+      TRUST_PROXY: 1
+    deploy:
+      resources:
+        limits:
+          memory: 400M
+
+  outbox-publisher:
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      NODE_ENV: production
+      PG_POOL_MAX: 5
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 180M
+
+  notification-consumer:
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      NODE_ENV: production
+      PG_POOL_MAX: 5
+    deploy:
+      resources:
+        limits:
+          memory: 180M
+
+  pricing:
+    ports: !override []
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      NODE_ENV: production
+      PG_POOL_MAX: 5
+    deploy:
+      resources:
+        limits:
+          memory: 180M
+
+  prometheus:
+    ports: !override []
+    restart: unless-stopped
+    logging: *default-logging
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=2GB
+      # Public and read-only via Caddy at /prometheus/ (this is a demo; on a
+      # deployment with anything sensitive this should stay internal-only).
+      # Route prefix matches the Caddy subpath so links and static assets
+      # resolve correctly.
+      - --web.external-url=https://${DOMAIN}/prometheus/
+      - --web.route-prefix=/
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+
+  grafana:
+    ports: !override []
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      # Public and read-only by design: Viewer is what keeps anonymous access
+      # read-only, and the admin password is still required for the
+      # maintainer to log in and edit dashboards.
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: 'Viewer'
+      GF_AUTH_ANONYMOUS_ORG_NAME: 'Main Org.'
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      # Permits iframing a panel into a portfolio page.
+      GF_SECURITY_ALLOW_EMBEDDING: 'true'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_SERVER_ROOT_URL: https://${DOMAIN}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: 'true'
+    deploy:
+      resources:
+        limits:
+          memory: 200M
+
+  jaeger:
+    ports: !override []
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      # Caps the in-memory trace store, or it grows until the box dies.
+      MEMORY_MAX_TRACES: '10000'
+      COLLECTOR_OTLP_ENABLED: 'true'
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    ports: ['80:80', '443:443', '443:443/udp']
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web:/srv/web:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    depends_on: [api]
+    deploy:
+      resources:
+        limits:
+          memory: 100M
+
+volumes:
+  # Holds the TLS certificates. Losing it forces re-issuance against Let's
+  # Encrypt's limit of 5 certificates per domain per week.
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'sanad-api'
+    static_configs:
+      - targets: ['api:4000']
+    metrics_path: /metrics
+
+  - job_name: 'sanad-outbox-publisher'
+    static_configs:
+      - targets: ['outbox-publisher:9101']
+    metrics_path: /metrics
+
+  - job_name: 'sanad-notification-consumer'
+    static_configs:
+      - targets: ['notification-consumer:9101']
+    metrics_path: /metrics
+
+  - job_name: 'sanad-pricing'
+    static_configs:
+      - targets: ['pricing:9101']
+    metrics_path: /metrics

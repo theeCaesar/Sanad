@@ -1,0 +1,13 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+.env.*
+config.env
+coverage
+tests
+docs
+postman
+k8s
+*.md

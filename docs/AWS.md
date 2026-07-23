@@ -1,0 +1,173 @@
+# Sanad on AWS
+
+> The point of this document is not "I can name AWS services." It is the set of **tradeoffs**, each of which I can defend — and several of which I would make **differently** for a different system.
+>
+> Anyone can list EKS, RDS, S3. The senior question is always *why that one, and what did it cost you?*
+
+---
+
+## The architecture
+
+```
+                            Route 53
+                               │
+                        ┌──────▼───────┐
+                        │  CloudFront  │  proof-of-delivery media
+                        │ (signed URLs)│  + the public demo
+                        └──────┬───────┘
+                               │
+              ┌────────────────▼────────────────┐
+              │           ALB (public subnet)   │   ← the ONLY public thing
+              └────────────────┬────────────────┘
+                               │
+   ══════════════════ VPC ═════╪═════════════════════════════
+                               │
+   ┌───────── PRIVATE SUBNETS (AZ-a, AZ-b) ──────────────┐
+   │                                                      │
+   │   EKS: api nodes (ON-DEMAND)  workers (SPOT)         │
+   │        ▲                       ▲                     │
+   │        │ IRSA — assumes an IAM role. NO KEYS.        │
+   └────────┼───────────────────────┼─────────────────────┘
+            │                       │
+   ┌────────▼───────────────────────▼──────────────────────┐
+   │  DATABASE SUBNETS — no internet route AT ALL          │
+   │                                                        │
+   │   RDS Proxy → RDS Postgres (MULTI-AZ, encrypted)      │
+   │   ElastiCache Redis (2 nodes, auto-failover)          │
+   │   MSK Kafka (2 brokers, IAM auth)                     │
+   └────────────────────────────────────────────────────────┘
+
+   S3 (media) ← all public access BLOCKED. Lifecycle → IA → Glacier.
+```
+
+---
+
+## The five decisions worth defending
+
+### 1. Multi-AZ everywhere
+
+An Availability Zone is a physically separate data centre. AWS loses one occasionally. If the database and every pod live in one AZ, that loss is a **total outage**.
+
+> **This is the CAP theorem made physical.** The network partition is not a thought experiment — it is a fibre cut, and it *will* happen. Designing as if it will not is the actual mistake.
+
+Multi-AZ RDS doubles the database cost. For a system whose entire value proposition is *"your drivers' work is never lost,"* that is not a close call.
+
+**And note what Multi-AZ is NOT:** it is not a read replica. The standby serves **nothing**. You are buying **failover**, and only failover. People conflate the two constantly, and then wonder why their read performance did not improve.
+
+### 2. Spot instances for the workers — and the architecture *earned* it
+
+Spot is ~70% cheaper, and AWS can reclaim the instance with two minutes' notice.
+
+For the **API**, that is the wrong trade. A reclaim during the 17:00 reconnect storm means drivers get connection errors at the exact moment 300 of them are syncing a day's work.
+
+For the **outbox publisher and Kafka consumers**, spot is *free money* — because interruption-tolerance is a property that **falls out of the design**:
+
+```
+AWS reclaims a publisher pod mid-batch
+  → the Postgres transaction rolls back
+    → the row locks release
+      → the rows revert to `pending`
+        → another worker picks them up next pass
+
+Nothing lost. No cleanup code. Zero.
+```
+
+**The workers are safe on spot BECAUSE the outbox pattern made them idempotent and restartable.** I did not choose spot and then hope. The architecture bought the discount.
+
+
+### 3. IRSA — roles, never keys
+
+**The most important decision in the whole file, and it is the direct fix for a habit I have.**
+
+I have shipped `config.env` files with live credentials inside a zip. More than once. The fix was always *"remember not to do that,"* and it never worked.
+
+Without IRSA, a pod needing S3 gets an AWS access key → which lives in an env var → which lives in a Secret → which someone eventually commits.
+
+With IRSA, the pod **assumes an IAM role**. AWS hands it temporary credentials, rotated automatically, expiring in an hour.
+
+> **You cannot leak a credential that does not exist.**
+
+And the RDS master password is generated by AWS, stored in Secrets Manager, and **never appears in Terraform state** — because Terraform state is a file, on a disk, that people copy.
+
+### 4. Least privilege, stated as a blast radius
+
+The API's IAM policy grants `s3:PutObject` and `s3:GetObject` on the media bucket. That is all.
+
+It **cannot**:
+- `s3:DeleteObject` — proof of delivery is *evidence*. The app has no business destroying it, and neither does an attacker who owns the app.
+- `s3:ListBucket` — a compromised pod cannot **enumerate every customer's photos**. It can only fetch keys it already knows.
+- touch any other bucket.
+
+> **The blast radius of a compromised API pod is: it can read and write proof media it already has keys for.** That is it.
+
+Writing the policy that way takes thirty extra seconds. Not writing it that way is how a single dependency CVE becomes a data breach.
+
+### 5. The database tier has no internet route at all
+
+Three tiers, not two. Public (ALB only) → private (pods) → **database (no egress whatsoever)**.
+
+Why bother, when the pods can reach the DB anyway?
+
+**Defence in depth.** If an app pod is compromised — a dependency with an RCE — the attacker is in the private subnet. From there they *can* reach the database; that is unavoidable, the app needs to. But they **cannot exfiltrate a dump to their own server**, because the database tier has no path out. They would have to route it back through the compromised pod, which is noisy and detectable.
+
+Most cloud breaches are a database someone accidentally exposed. This makes *"accidentally"* much harder.
+
+---
+
+## The bill
+
+Realistic monthly, `me-central-1`, for a fleet of ~300 drivers:
+
+| | | |
+|---|---|---|
+| EKS control plane | $73 | fixed. The cost of not running your own control plane. |
+| API nodes (3 × t3.medium, on-demand) | $91 | |
+| Worker nodes (2 × t3.small, **spot**) | **$9** | on-demand would be $30 |
+| **RDS db.t4g.medium, Multi-AZ** | **$122** | ~$61 of this is the standby. Worth it. |
+| RDS Proxy | $15 | stops the reconnect storm exhausting the pool |
+| ElastiCache (2 × t4g.micro) | $25 | |
+| **MSK (2 × kafka.t3.small)** | **$140** | see below |
+| NAT gateway (**one**, not per-AZ) | $32 | one-per-AZ would be $64 |
+| S3 + CloudFront | ~$15 | with the lifecycle rule. Without it, this grows forever. |
+| ALB | $18 | |
+| **Total** | **~$540/mo** | |
+
+### The honest part: MSK is the wrong call at this scale
+
+**$140/month for Kafka, on a system this size, is hard to defend.**
+
+SQS + SNS would cost roughly **$5** and cover 90% of what we actually use Kafka for — fan-out to notifications, analytics, and inventory. The SNS→SQS fan-out pattern is a direct substitute.
+
+**What we would lose: replay.**
+
+SQS deletes a message once consumed. Kafka keeps the log — so an analytics service built *next year* can rewind to offset 0 and rebuild its entire state from history. That property is worth real money the first time you need it, and **worth nothing until then**.
+
+> If a client asked me to cut the bill, **MSK is the first thing I would cut**, and I would say so up front rather than defending a choice on sunk cost.
+>
+> Being able to name the weakest part of your own architecture, unprompted, is worth more than defending all of it.
+
+### The other levers, in order
+
+1. **Reserved Instances / Savings Plan** — commit 1 year, save ~40% on the EC2 and RDS spend. Cuts ~$85/mo. This is free money if the system is going to exist in a year, and it usually is.
+2. **Drop MSK for SNS+SQS** — saves $135/mo. Costs you replay.
+3. **Single-AZ RDS** — saves $61/mo. **Do not.** This is the one place I would not trade money for resilience, because the ledger is the product.
+4. **S3 lifecycle** — already in the Terraform. On 500 deliveries/day at 2MB a photo, that is ~30GB/month **forever**. The lifecycle rule is the difference between a bill that grows linearly and one that flattens.
+
+---
+
+## What I have NOT done
+
+Honest list, because an architecture doc that only lists wins is marketing.
+
+| | |
+|---|---|
+| **No WAF** | The ALB is unprotected against L7 attacks. AWS WAF is ~$10/mo and I should add it. |
+| **No cross-region DR** | If `me-central-1` disappears entirely, Sanad is down. Backups are in-region. For this system that is an acceptable risk; for a bank it would not be. |
+| **No PrivateLink** | S3 traffic from pods goes out through the NAT and back in. VPC endpoints would keep it inside AWS's network — cheaper *and* more private. Genuine oversight. |
+
+
+---
+
+## The one-line version
+
+> Multi-AZ everything because the partition is a fibre cut, not a thought experiment. Spot for the workers **because the outbox pattern already made them restartable** — the architecture bought the discount. IRSA rather than keys, because **you cannot leak a credential that does not exist.** And MSK is the weakest line in the bill; SQS+SNS would do 90% of it for $5, and the 10% you lose is replay.

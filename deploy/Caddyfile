@@ -1,0 +1,106 @@
+{
+	email {$ACME_EMAIL}
+
+	# Staging has an untrusted certificate (the browser warns) but a far
+	# higher rate limit than production's 5 per domain per week, which is
+	# easy to exhaust by retrying against a misconfigured DNS record.
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+{$DOMAIN} {
+	encode gzip zstd
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+		# Do not set X-Frame-Options here: it would block the Grafana
+		# embedding that GF_SECURITY_ALLOW_EMBEDDING enables.
+	}
+
+	handle {
+		root * /srv/web/driver
+		try_files {path} /index.html
+		file_server
+	}
+
+	handle_path /dispatch* {
+		root * /srv/web/dispatch
+		try_files {path} /index.html
+		file_server
+	}
+
+	handle /api/* {
+		reverse_proxy api:4000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	handle /health {
+		reverse_proxy api:4000
+	}
+
+	handle /ready {
+		reverse_proxy api:4000
+	}
+
+	# Deliberately open: operates on a seeded demo org, and is rate limited
+	# by the application.
+	handle /demo/* {
+		reverse_proxy api:4000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	handle /graphql* {
+		reverse_proxy api:4000
+	}
+
+	handle /socket.io/* {
+		reverse_proxy api:4000 {
+			transport http {
+				read_timeout 24h
+				write_timeout 24h
+			}
+		}
+	}
+
+	# Prometheus scrapes this over the internal network. Publishing it would
+	# expose route names, request volumes and error rates.
+	handle /metrics* {
+		respond "Not found" 404
+	}
+
+	# Public access is intentional; read-only is enforced by Grafana's
+	# anonymous Viewer role, not by the proxy.
+	handle_path /grafana/* {
+		reverse_proxy grafana:3000
+	}
+
+	# Jaeger has no authentication mechanism, so exposure is all-or-nothing.
+	# It holds only demo trace data.
+	handle_path /jaeger/* {
+		reverse_proxy jaeger:16686
+	}
+
+	# Public by choice for this demo: Prometheus has no authentication of its
+	# own and its query API enumerates every metric, label and scrape target,
+	# so this is showing metrics data, not securing it. Do not point this at
+	# a deployment carrying anything sensitive.
+	handle_path /prometheus/* {
+		reverse_proxy prometheus:9090
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 10mb
+			roll_keep 3
+		}
+		format json
+	}
+}
