@@ -78,7 +78,12 @@
 
 	# Public access is intentional; read-only is enforced by Grafana's
 	# anonymous Viewer role, not by the proxy.
-	handle_path /grafana/* {
+	#
+	# handle (not handle_path): GF_SERVER_SERVE_FROM_SUB_PATH expects the
+	# full /grafana/* path forwarded as-is: Grafana strips the subpath
+	# itself. Stripping it here too (handle_path) causes an infinite
+	# redirect loop.
+	handle /grafana/* {
 		reverse_proxy grafana:3000
 	}
 

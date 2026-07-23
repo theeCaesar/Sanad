@@ -67,6 +67,12 @@ services:
       # Required behind Caddy: without it every request appears to originate
       # from Caddy's address and all clients share one rate-limit bucket.
       TRUST_PROXY: 1
+      # The base file hardcodes dev-only secrets; production must not run
+      # with those in place.
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET in .env}
+      JWT_DEVICE_SECRET: ${JWT_DEVICE_SECRET:?set JWT_DEVICE_SECRET in .env}
+      ALLOWED_ORIGINS: https://${DOMAIN}
     deploy:
       resources:
         limits:
