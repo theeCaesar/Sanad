@@ -422,12 +422,25 @@ h2 b { color: var(--sand); font-weight: 600; }
   let auth = null;
   const POLL_MS = 5000;
 
+  // /demo/session issues a 15-minute dispatcher access token. Anyone leaving
+  // this tab open longer than that would start getting 401s on every poll.
+  // authenticate() re-fetches a token from the SAME shared demo org (see
+  // src/db/seeds/demoSeed.js — createSharedDemoSession caches the org itself
+  // for 30 minutes), so re-authenticating never switches you to a different
+  // business mid-session, just refreshes the token.
+  async function authenticate() {
+    const sessionRes = await fetch(`${BACKEND}/demo/session`, { method: "POST" });
+    if (!sessionRes.ok) throw new Error(`session ${sessionRes.status}`);
+    const sessionBody = await sessionRes.json();
+    auth = { Authorization: `Bearer ${sessionBody.data.dispatcher.access_token}` };
+  }
+
   // This board reads a shared demo org (see src/db/seeds/demoSeed.js —
   // createSharedDemoSession) that the driver app writes to. Without polling,
   // a delivery made in the driver app would only ever appear here after a
   // manual page reload, which reads as "the dashboard is broken" rather than
   // "the dashboard hasn't asked again yet".
-  async function refreshBoard() {
+  async function refreshBoard(isRetry) {
     try {
       const [devicesRes, cashRes, boardRes, conflictsRes] = await Promise.all([
         fetch(`${BACKEND}/api/v1/dispatch/devices`, { headers: auth }),
@@ -435,6 +448,12 @@ h2 b { color: var(--sand); font-weight: 600; }
         fetch(`${BACKEND}/api/v1/dispatch/board?limit=100`, { headers: auth }),
         fetch(`${BACKEND}/api/v1/dispatch/conflicts`, { headers: auth }),
       ]);
+
+      if ([devicesRes, cashRes, boardRes, conflictsRes].some((r) => r.status === 401)) {
+        if (isRetry) throw new Error("still unauthorized after re-authenticating");
+        await authenticate();
+        return refreshBoard(true);
+      }
       if (![devicesRes, cashRes, boardRes, conflictsRes].every((r) => r.ok)) {
         throw new Error("one or more dispatch endpoints failed");
       }
@@ -452,11 +471,7 @@ h2 b { color: var(--sand); font-weight: 600; }
 
   async function connectLive() {
     try {
-      const sessionRes = await fetch(`${BACKEND}/demo/session`, { method: "POST" });
-      if (!sessionRes.ok) throw new Error(`session ${sessionRes.status}`);
-      const sessionBody = await sessionRes.json();
-      auth = { Authorization: `Bearer ${sessionBody.data.dispatcher.access_token}` };
-
+      await authenticate();
       await refreshBoard();
       setInterval(refreshBoard, POLL_MS);
     } catch (e) {

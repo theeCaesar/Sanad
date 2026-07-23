@@ -118,8 +118,11 @@ function createDemoSeeder({ db, authService, logger }) {
         orgId,
         slug,
         driver,
+        driverRow,
         otherDriverId: otherDriver.id,
         dispatcher,
+        dispatcherRow,
+        device,
         deviceId: device.id,
         deviceToken,
         dispatcherToken,
@@ -152,14 +155,27 @@ async function sweepDemoOrgs(db, { olderThanHours = 1 } = {}) {
 // driver app, and it is the same job the dispatch console's board is
 // reading. A single in-memory cache is enough because the prod overlay
 // runs exactly one api replica (see docker-compose.prod.yml).
-function createSharedDemoSession(seedDemo, { ttlMs = 30 * 60 * 1000 } = {}) {
+//
+// The cache holds the seeded DB rows, not the signed JWTs: the dispatcher
+// access token is only valid for 15 minutes (JWT_ACCESS_TTL), well inside
+// this cache's TTL, so a call late in the window must re-sign fresh tokens
+// rather than hand back ones that already expired.
+function createSharedDemoSession(seedDemo, authService, { ttlMs = 30 * 60 * 1000 } = {}) {
   let cached = null;
   let cachedAt = 0;
   let inflight = null;
 
+  function withFreshTokens(session) {
+    return {
+      ...session,
+      deviceToken: authService.signDevice(session.driverRow, session.device),
+      dispatcherToken: authService.signAccess(session.dispatcherRow),
+    };
+  }
+
   return async function getSharedDemoSession() {
-    if (cached && Date.now() - cachedAt < ttlMs) return cached;
-    if (inflight) return inflight;
+    if (cached && Date.now() - cachedAt < ttlMs) return withFreshTokens(cached);
+    if (inflight) return inflight.then(withFreshTokens);
 
     inflight = seedDemo()
       .then((session) => {
@@ -171,7 +187,7 @@ function createSharedDemoSession(seedDemo, { ttlMs = 30 * 60 * 1000 } = {}) {
         inflight = null;
       });
 
-    return inflight;
+    return withFreshTokens(await inflight);
   };
 }
 

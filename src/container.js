@@ -66,7 +66,7 @@ function createContainer(overrides = {}) {
   const reportController = createReportController({ reportRepo });
 
   const seedDemo = createDemoSeeder({ db: database, authService, logger });
-  const getSharedDemoSession = createSharedDemoSession(seedDemo);
+  const getSharedDemoSession = createSharedDemoSession(seedDemo, authService);
   const demoController = createDemoController({
     db: database, syncService, jobRepo, seedDemo, getSharedDemoSession, logger,
   });
